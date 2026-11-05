@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{8A3F2C41-5B7E-4D9A-9C1E-2F6B0D4A7E31}</ProjectGuid>
+    <RootNamespace>SchematicEditor</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <!-- wxWidgets 根目录：优先使用环境变量 WXWIN，未设置时回退到本机安装路径 -->
+    <WXWIN Condition="'$(WXWIN)'==''">D:\Test\wxWidgets-3.2.11</WXWIN>
+    <!-- 本机 wxWidgets 为 x64 / 静态库(static) / Unicode 构建 -->
+    <WxLibDir>$(WXWIN)\lib\vc_x64_lib</WxLibDir>
+    <WxIncludeDir>$(WXWIN)\include</WxIncludeDir>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <!-- 资源编译器需要找到 build 生成的 setup 头（rcdefs.h） -->
+    <WxSetupSubDir>mswud</WxSetupSubDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <WxSetupSubDir>mswu</WxSetupSubDir>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup Label="UserMacros" />
+
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj\$(Configuration)\</IntDir>
+    <TargetName>SchematicEditor</TargetName>
+  </PropertyGroup>
+
+  <!-- ============================================================
+       Debug | x64
+       ============================================================ -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <!-- /utf-8：源码为 UTF-8，避免中文在 GBK(936) 代码页下被误读 -->
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;__WXMSW__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- 注意：include\msvc 必须排在 include 之前，它是 MSVC 的自动链接包装头 -->
+      <AdditionalIncludeDirectories>$(WxIncludeDir)\msvc;$(WxIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_DEBUG;__WXMSW__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(WxLibDir)\$(WxSetupSubDir);$(WxIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(WxLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <!-- 具体需要哪些 wx 库由 include\msvc\wx\setup.h 自动 #pragma comment(lib) 完成 -->
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- ============================================================
+       Release | x64
+       ============================================================ -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;__WXMSW__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(WxIncludeDir)\msvc;$(WxIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>NDEBUG;__WXMSW__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(WxLibDir)\$(WxSetupSubDir);$(WxIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(WxLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="src\minimal.cpp" />
+    <ClCompile Include="src\MainFrame.cpp" />
+    <ClCompile Include="src\SchematicCanvas.cpp" />
+    <ClCompile Include="src\LibraryPanel.cpp" />
+    <ClCompile Include="src\PropertyPanel.cpp" />
+    <ClCompile Include="src\ComponentCatalog.cpp" />
+    <ClCompile Include="src\ComponentEditorDialog.cpp" />
+    <ClCompile Include="src\NetModel.cpp" />
+    <ClCompile Include="src\SchematicIO.cpp" />
+    <ClCompile Include="src\SimModel.cpp" />
+    <ClCompile Include="src\SymbolPainter.cpp" />
+    <ClCompile Include="src\TextReportDialog.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\Ids.h" />
+    <ClInclude Include="src\ComponentCatalog.h" />
+    <ClInclude Include="src\ComponentEditorDialog.h" />
+    <ClInclude Include="src\NetModel.h" />
+    <ClInclude Include="src\SchematicIO.h" />
+    <ClInclude Include="src\SimModel.h" />
+    <ClInclude Include="src\SymbolPainter.h" />
+    <ClInclude Include="src\SchematicCanvas.h" />
+    <ClInclude Include="src\LibraryPanel.h" />
+    <ClInclude Include="src\PropertyPanel.h" />
+    <ClInclude Include="src\TextReportDialog.h" />
+    <ClInclude Include="src\MainFrame.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="res\SchematicEditor.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>
+
+

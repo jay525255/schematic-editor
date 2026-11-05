@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schematic version="1.0" format="circuit-schematic" generator="SchematicEditor 1.0">
+  <view gridStep="10" gridVisible="1" snapEnabled="1" zoom="1.0000"/>
+  <components count="3">
+    <component id="1" name="与门" refdes="U1" x="-280" y="-20" w="60" h="40">
+      <pin name="A" dir="input" side="left" slot="0" count="2"/>
+      <pin name="B" dir="input" side="left" slot="1" count="2"/>
+      <pin name="Y" dir="output" side="right" slot="0" count="1"/>
+    </component>
+    <component id="2" name="与门" refdes="U2" x="220" y="-20" w="60" h="40">
+      <pin name="A" dir="input" side="left" slot="0" count="2"/>
+      <pin name="B" dir="input" side="left" slot="1" count="2"/>
+      <pin name="Y" dir="output" side="right" slot="0" count="1"/>
+    </component>
+    <component id="3" name="与门" refdes="U3" x="220" y="230" w="60" h="40">
+      <pin name="A" dir="input" side="left" slot="0" count="2"/>
+      <pin name="B" dir="input" side="left" slot="1" count="2"/>
+      <pin name="Y" dir="output" side="right" slot="0" count="1"/>
+    </component>
+  </components>
+  <wires count="5">
+    <wire id="1" x1="-210" y1="0" x2="210" y2="0"/>
+    <wire id="2" x1="210" y1="0" x2="210" y2="-10"/>
+    <wire id="3" x1="0" y1="0" x2="0" y2="240"/>
+    <wire id="4" x1="0" y1="240" x2="210" y2="240"/>
+    <wire id="5" x1="-290" y1="-10" x2="-390" y2="-10"/>
+  </wires>
+</schematic>

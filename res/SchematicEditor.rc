@@ -1,0 +1,11 @@
+// ============================================================
+//  SchematicEditor resource script
+//
+//  Including wx/msw/wx.rc is REQUIRED:
+//    - pulls in the standard wxWidgets resources (cursors, bitmaps)
+//    - embeds the Common Controls v6 manifest, which enables the
+//      modern Windows 10/11 visual styles
+//  Without it the app still runs, but looks like Windows Classic.
+// ============================================================
+
+#include "wx/msw/wx.rc"

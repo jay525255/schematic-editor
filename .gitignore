@@ -1,0 +1,33 @@
+# ---- 构建产物（体积大，不入库）----
+build/
+obj/
+bin/
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.iobj
+*.ipdb
+*.obj
+
+# ---- Visual Studio 用户/缓存文件 ----
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.aps
+*.VC.db
+*.VC.VC.opendb
+
+# ---- 程序运行时生成的产物 ----
+assert.log
+components.xml
+*.ses.bak
+
+# ---- 系统文件 ----
+Thumbs.db
+desktop.ini
+.DS_Store
