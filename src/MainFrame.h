@@ -63,6 +63,7 @@ private:
     //  绑定区间 [wxID_LOWEST, ID_SIM_STOP]，既覆盖全部菜单项也覆盖工具栏；
     //  已在 switch 中实现的走真实逻辑，其余统一到底部的“尚未实现”分支。
     void OnCommand(wxCommandEvent& event);
+    void OnCharHook(wxKeyEvent& event);
     void OnRecentFile(wxCommandEvent& event);
     void OnClose(wxCloseEvent& event);
 

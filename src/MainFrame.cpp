@@ -5,6 +5,7 @@
 #include <wx/bmpbndl.h>
 #include <wx/filedlg.h>
 #include <wx/filename.h>
+#include <wx/textentry.h>
 #include <wx/utils.h>
 
 #include <algorithm>
@@ -108,10 +109,16 @@ const char* kSvgText =
     R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">)"
     R"(<path d="M5 6.5h14M12 6.5V19M9 19h6" fill="none" stroke="#334155" stroke-width="1.9" stroke-linecap="round"/></svg>)";
 
+const char* kSvgDelete =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">)"
+    R"(<path d="M5 7h14M9 7V4.5h6V7M7.5 7l1 13.5h7l1-13.5" fill="none" stroke="#b91c1c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>)"
+    R"(<path d="M10.5 10.5v6.5M13.5 10.5v6.5" stroke="#b91c1c" stroke-width="1.5" stroke-linecap="round"/></svg>)";
+
+// 清空画布：一张纸 + 大红叉（和上面的"垃圾桶=删除选中"区分开）
 const char* kSvgClear =
     R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">)"
-    R"(<path d="M5 7h14M9 7V4.5h6V7M7.5 7l1 13.5h7l1-13.5" fill="none" stroke="#334155" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>)"
-    R"(<path d="M10.5 10.5v6.5M13.5 10.5v6.5" stroke="#b91c1c" stroke-width="1.5" stroke-linecap="round"/></svg>)";
+    R"(<rect x="4.5" y="3.5" width="15" height="17" rx="1.6" fill="none" stroke="#334155" stroke-width="1.5"/>)"
+    R"(<path d="M8 8.5l8 8M16 8.5l-8 8" stroke="#b91c1c" stroke-width="1.7" stroke-linecap="round"/></svg>)";
 
 const char* kSvgSimulate =
     R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">)"
@@ -220,6 +227,10 @@ MainFrame::MainFrame()
     {
         ApplyPropertyEdit(key, value);
     };
+
+    // Delete 的窗口级兜底：不管焦点在画布、元件库还是属性表，都能删掉选中的东西。
+    // 画布自己的 OnKeyDown 也处理 Delete，但那只在画布拿到焦点时有效。
+    Bind(wxEVT_CHAR_HOOK, &MainFrame::OnCharHook, this);
 
     SyncViewState();
     UpdateProperties();
@@ -489,8 +500,12 @@ void MainFrame::CreateToolBars()
     m_toolBar->AddRadioTool(ID_TOOL_TEXT,   L"文本", Icon(kSvgText),   wxNullBitmap, L"放置文本");
     m_toolBar->AddSeparator();
 
+    // 删除选中：和"清空画布"分开，两个图标现在不会再混
+    m_toolBar->AddTool(ID_EDIT_DELETE, L"删除", Icon(kSvgDelete), L"删除选中的元件 / 导线 / 文本 (Delete)");
+    m_toolBar->AddSeparator();
+
     // ---- 其它 ----
-    m_toolBar->AddTool(ID_VIEW_RESET, L"清空画布", Icon(kSvgClear),    L"清空画布上的所有元件");
+    m_toolBar->AddTool(ID_VIEW_RESET, L"清空画布", Icon(kSvgClear),    L"清空画布上的所有元件（一次性全清，不能只删一个）");
     m_toolBar->AddTool(ID_SIM_RUN,    L"仿真",     Icon(kSvgSimulate), L"运行逻辑仿真 (任务 6)");
 
     m_toolBar->Realize();
@@ -1157,6 +1172,64 @@ void MainFrame::OnClose(wxCloseEvent& event)
     }
 
     Destroy();
+}
+
+// ============================================================
+//  Delete 的窗口级兜底
+//
+//  为什么需要：按键事件只会送到"有焦点的那个窗口"。
+//  画布自己的 OnKeyDown 能处理 Delete，但用户点过元件库树、
+//  点过属性表、或者在属性表里编辑完一格之后，焦点就不在画布上了，
+//  这时按 Delete 什么都不会发生 —— 用户的感受就是"删不掉"。
+//
+//  wxEVT_CHAR_HOOK 是"按键派发之前的预处理"，挂在主窗口上就能
+//  截获本窗口里任何子控件收到的按键，所以在这里兜一道最稳。
+// ============================================================
+
+void MainFrame::OnCharHook(wxKeyEvent& event)
+{
+    const int code = event.GetKeyCode();
+
+    // 只关心删除键，别的键一律放行
+    if (code != WXK_DELETE && code != WXK_NUMPAD_DELETE && code != WXK_BACK)
+    {
+        event.Skip();
+        return;
+    }
+
+    // 正在输入框里打字（属性表的就地编辑框、元件库搜索框、文本输入对话框）
+    // 时不能抢 Delete，否则会删掉用户选中要删的文字。
+    if (wxWindow* focus = wxWindow::FindFocus())
+    {
+        if (dynamic_cast<wxTextEntryBase*>(focus) != nullptr)
+        {
+            event.Skip();
+            return;
+        }
+    }
+
+    if (!m_canvas)
+    {
+        event.Skip();
+        return;
+    }
+
+    if (m_canvas->HasSelection())
+    {
+        m_canvas->DeleteSelection();
+        UpdateStatusBar();
+        return;                       // 吃掉按键，不再往下传
+    }
+
+    if (code != WXK_BACK)
+    {
+        // 没选中东西时给一句明确的话，别让用户以为功能坏了
+        SetHint(L"没有选中对象：先用鼠标点一下要删的元件 / 导线 / 文本，或拖出选框再按 Delete");
+        wxBell();
+        return;
+    }
+
+    event.Skip();
 }
 
 // ============================================================

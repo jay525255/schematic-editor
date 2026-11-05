@@ -7,6 +7,7 @@
 #include <cmath>
 #include <memory>
 
+#include "Ids.h"
 #include "SymbolPainter.h"
 
 namespace se
@@ -244,11 +245,28 @@ int SchematicCanvas::HitTestComponent(const wxPoint& world) const
 {
     for (int i = static_cast<int>(m_components.size()) - 1; i >= 0; --i)
     {
-        wxRect box = BoxOf(m_components[i]);
+        const ComponentInstance& comp = m_components[i];
+
+        // 本体 + 引脚线：按引脚长度外扩一圈，点在引脚线上也算点中这个元件
+        wxRect box = BoxOf(comp);
         box.Inflate(kPinLen, kPinLen);
 
         if (box.Contains(world))
             return i;
+
+        // 位号文字（画在本体上方居中，见 SymbolPainter::PaintSymbolLabels）：
+        // 点在这几个字上也要能选中，否则"点元件"这件事看起来时灵时不灵。
+        if (!comp.refdes.IsEmpty())
+        {
+            const int    labelW = std::max(16, static_cast<int>(comp.refdes.length()) * 7);
+            const wxRect labelBox(comp.pos.x + (comp.w - labelW) / 2,
+                                  comp.pos.y - 18,
+                                  labelW,
+                                  16);
+
+            if (labelBox.Contains(world))
+                return i;
+        }
     }
 
     return -1;
@@ -1587,7 +1605,7 @@ void SchematicCanvas::OnLeftUp(wxMouseEvent&)
         EndBandSelect();
 }
 
-void SchematicCanvas::OnRightDown(wxMouseEvent&)
+void SchematicCanvas::OnRightDown(wxMouseEvent& event)
 {
     // 右键结束当前导线
     if (m_wireDrawing)
@@ -1609,7 +1627,90 @@ void SchematicCanvas::OnRightDown(wxMouseEvent&)
             OnStatusMessage(L"已取消放置");
 
         Refresh();
+        return;
     }
+
+    // ------------------------------------------------------------
+    //  右键上下文菜单（任务 4 补充）
+    //
+    //  为什么要有：删除/复制/旋转这些操作原来只藏在菜单栏里，
+    //  用户找不到——"元件删不掉"的反馈里有一半是找不到入口。
+    //  这里把最常用的几条放在鼠标底下。
+    // ------------------------------------------------------------
+    const wxPoint2DDouble worldD = ToWorld(wxPoint2DDouble(event.GetX(), event.GetY()));
+    const wxPoint        world(static_cast<int>(std::lround(worldD.m_x)),
+                               static_cast<int>(std::lround(worldD.m_y)));
+
+    // 右键点在某个对象上、而它当前没被选中 → 先把选择切到它上面，
+    // 这样"右键 → 删除"直接作用于鼠标下面那个东西，不用先左键点一次。
+    const int hitComp = HitTestComponent(world);
+    const int hitWire = (hitComp < 0) ? HitTestWire(world) : -1;
+    const int hitText = (hitComp < 0 && hitWire < 0) ? HitTestText(world) : -1;
+
+    bool selectionChanged = false;
+
+    if (hitComp >= 0 && !IsComponentSelected(hitComp))
+    {
+        ClearSelectionInternal();
+        m_selComponents.push_back(hitComp);
+        selectionChanged = true;
+    }
+    else if (hitWire >= 0 && !IsWireSelected(hitWire))
+    {
+        ClearSelectionInternal();
+        m_selWires.push_back(hitWire);
+        selectionChanged = true;
+    }
+    else if (hitText >= 0 && !IsTextSelected(hitText))
+    {
+        ClearSelectionInternal();
+        m_selTexts.push_back(hitText);
+        selectionChanged = true;
+    }
+
+    if (selectionChanged)
+    {
+        NotifySelectionChanged();
+        Refresh();
+    }
+
+    const bool hasSel = HasSelection();
+
+    wxMenu menu;
+    wxMenuItem* del = menu.Append(ID_EDIT_DELETE, L"删除\tDelete");
+    del->Enable(hasSel);
+
+    wxMenuItem* cut = menu.Append(wxID_CUT, L"剪切\tCtrl+X");
+    cut->Enable(hasSel);
+
+    wxMenuItem* copy = menu.Append(wxID_COPY, L"复制\tCtrl+C");
+    copy->Enable(hasSel);
+
+    wxMenuItem* paste = menu.Append(wxID_PASTE, L"粘贴\tCtrl+V");
+    paste->Enable(HasClipboard());
+
+    menu.AppendSeparator();
+
+    wxMenuItem* rotCw = menu.Append(ID_EDIT_ROTATE_CW, L"旋转 90°（顺时针）\tCtrl+R");
+    rotCw->Enable(hasSel);
+
+    wxMenuItem* rotCcw = menu.Append(ID_EDIT_ROTATE_CCW, L"旋转 90°（逆时针）\tCtrl+Shift+R");
+    rotCcw->Enable(hasSel);
+
+    wxMenuItem* flipH = menu.Append(ID_EDIT_FLIP_H, L"水平翻转（左右）\tCtrl+H");
+    flipH->Enable(hasSel);
+
+    wxMenuItem* flipV = menu.Append(ID_EDIT_FLIP_V, L"垂直翻转（上下）\tCtrl+Shift+H");
+    flipV->Enable(hasSel);
+
+    menu.AppendSeparator();
+
+    menu.Append(ID_EDIT_SELECT_ALL, L"全选\tCtrl+A");
+
+    wxMenuItem* deselect = menu.Append(ID_EDIT_DESELECT_ALL, L"取消选择\tCtrl+Shift+A");
+    deselect->Enable(hasSel);
+
+    PopupMenu(&menu);
 }
 
 void SchematicCanvas::OnLeftDClick(wxMouseEvent&)
@@ -2392,7 +2493,14 @@ void SchematicCanvas::FinishWire(bool returnToSelect)
 void SchematicCanvas::DeleteSelection(const wxString& label)
 {
     if (!HasSelection())
+    {
+        // 以前这里直接 return，界面上一点反应都没有，看着像"删除坏了"。
+        // 现在给一句明确提示，用户就知道是"没选中"而不是"功能失效"。
+        if (OnStatusMessage)
+            OnStatusMessage(L"没有选中对象 — 先用鼠标点一下要删的元件 / 导线 / 文本，或按住左键拖出选框");
+
         return;
+    }
 
     const int componentCount = GetSelectedComponentCount();
     const int wireCount      = GetSelectedWireCount();
