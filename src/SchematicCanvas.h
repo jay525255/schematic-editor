@@ -16,11 +16,11 @@
 //    * 连接点（junction）自动判定与绘制
 //    * 连通性求解 + 网络高亮（鼠标悬停即高亮整条网络）
 //    * 网表生成 / 电气规则检查（委托 NetBuilder）
+//    * 复制 / 剪切 / 粘贴（粘贴时位号自动重新编号）
+//    * 元件旋转 / 水平翻转 / 垂直翻转（转完引脚换边、导线端点尽量跟随）
 //
 //  尚未实现：
-//    * 复制 / 粘贴
-//    * 拖动元件时导线自动跟随（橡皮筋连线）
-//    * 信号传播动画
+//    * 元件属性（位号 / 封装 / 型号）在属性表里直接改
 // ============================================================
 
 #pragma once
@@ -158,11 +158,28 @@ public:
 
     // ---- 编辑 ----------------------------------------------
     void SelectAll();
-    void DeleteSelection();
+    // label 为空时按“删除 N 元件 / …”自动命名撤销步骤；
+    // 剪切时传“剪切”，这样撤销列表里看到的是用户真正做过的操作
+    void DeleteSelection(const wxString& label = wxEmptyString);
     void DeselectAll();
     void ClearAll(bool markModified = false);
     void ResetDocument();          // 新建：清内容 + 清撤销栈
     void FinishWire(bool returnToSelect = true);
+
+    // ---- 剪贴板（任务 4）----------------------------------
+    //  复制的是"当时选中的那些对象"的一份拷贝，和文档本身脱钩：
+    //  复制之后再删原件、再撤销，剪贴板内容都不受影响。
+    //  粘贴时整体平移、位号重新编号，然后自动选中新贴出来的对象。
+    bool CanPaste() const { return !m_clip.Empty(); }
+    bool HasClipboard() const { return !m_clip.Empty(); }
+    void CopySelection();
+    void CutSelection();
+    void PasteClipboard();
+
+    // ---- 旋转 / 翻转（任务 4）-----------------------------
+    //  quartersCW：+1 = 顺时针 90°，-1 = 逆时针 90°
+    void RotateSelection(int quartersCW);
+    void FlipSelection(bool horizontal);
 
     // ---- 撤销 / 重做（快照式）-------------------------------
     //  每次“会改变文档的操作”之前先压一份完整快照。
@@ -204,6 +221,32 @@ private:
         std::map<wxString, int>        refCount;
         wxString                       label;
     };
+
+    // ---- 剪贴板内容（任务 4）-------------------------------
+    //  存的是"对象的一份拷贝"，不是指针：复制之后原件被删掉 / 被撤销，
+    //  剪贴板里仍然是当初复制的那一份，粘贴照样能用。
+    struct Clipboard
+    {
+        std::vector<ComponentInstance> components;
+        std::vector<Wire>              wires;
+        std::vector<TextItem>          texts;
+        wxPoint                        anchor { 0, 0 };   // 复制时包围盒左上角（世界坐标）
+
+        bool Empty() const
+        {
+            return components.empty() && wires.empty() && texts.empty();
+        }
+    };
+
+    Clipboard m_clip;
+
+    // 粘贴时给元件重新编号：U1 → 现有最大 U 号 + 1
+    wxString NextRefdes(const wxString& protoRefdes, const wxString& compName);
+
+    // 旋转 / 翻转的公共实现：apply 把单个元件变换到新姿态，
+    // 之后统一处理“贴在引脚上的导线端点”要不要跟着走
+    void TransformSelection(const std::function<void(ComponentInstance&)>& apply,
+                            const wxString& label);
 
     // 事件
     void OnPaint(wxPaintEvent& event);

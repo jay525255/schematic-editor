@@ -167,6 +167,10 @@ bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxStr
         node->AddAttribute(L"footprint", comp.footprint);
         node->AddAttribute(L"value", comp.value);
 
+        // 旋转 / 镜像：0..7（0..3 = 顺时针 0/90/180/270 度，4..7 = 先水平镜像再转）
+        // 老文件里没有这个属性，读的时候默认 0，完全兼容
+        AddIntAttr(node, "xform", comp.xform);
+
         // 引脚一起存：文件自包含，不依赖当前元件库版本
         for (const Pin& pin : comp.pins)
         {
@@ -315,6 +319,12 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
                 // 封装 / 元件值：老文件没有这两个属性，回退到元件库默认值
                 comp.footprint = GetStrAttr(node, "footprint");
                 comp.value     = GetStrAttr(node, "value");
+
+                // 旋转 / 镜像：老文件没有这个属性 → 0（不转）
+                comp.xform = GetIntAttr(node, "xform", 0);
+
+                if (comp.xform < 0 || comp.xform > 7)
+                    comp.xform = 0;
 
                 if (comp.footprint.IsEmpty() && comp.value.IsEmpty())
                 {

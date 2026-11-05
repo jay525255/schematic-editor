@@ -86,6 +86,16 @@ struct ComponentInstance
     //  这类对象只参与网络命名，不写进 PCB 网表的元件表与节点表。
     wxString         footprint;    // 封装名，例如 "DIP-14"
     wxString         value;        // 元件值/型号，例如 "AND2"
+
+    // ---- 旋转 / 镜像（任务 4）----
+    //  只记录"作者坐标系 → 屏幕坐标系"的净变换，共 8 种
+    //  （正方形对称群 D4）：0..3 = 顺时针转 0°/90°/180°/270°，
+    //  4..7 = 先水平镜像，再顺时针转 0°/90°/180°/270°。
+    //
+    //  注意：pins 里的 side/slot/count 存的是**变换之后**的值，
+    //  所以 PinAnchor / PinPosition / 连通性求解完全不用管这个字段；
+    //  只有绘制符号（SymbolPainter）要靠它把形状转到同样朝向。
+    int              xform  = 0;
 };
 
 // ------------------------------------------------------------
@@ -181,6 +191,22 @@ std::vector<Pin> MakePins(const wxString& compName,
                           ComponentKind   kind,
                           int             inputs,
                           int             outputs);
+
+// ------------------------------------------------------------
+// 旋转 / 镜像（任务 4）
+//
+//  两步走：
+//    1) 把每个引脚的锚点整体做一次刚体变换（90° 时外框 w/h 互换）；
+//    2) 从变换后的锚点反推"落在哪条边、这一边排第几"，
+//       写回 side / slot / count。
+//  这样"引脚换边、同侧顺序颠倒"全自动正确，不用为每种元件单独写规则。
+//  xform 同时更新，绘制时照着它转形状（见 SymbolPainter）。
+// ------------------------------------------------------------
+void RotateComponent(ComponentInstance& comp, int quartersCW);   // +1 = 顺时针 90°
+void MirrorComponent(ComponentInstance& comp, bool horizontal);  // 水平 / 垂直翻转
+
+// xform → 人话（属性面板显示用）
+wxString DescribeXform(int xform);
 
 // ------------------------------------------------------------
 // 连通性求解 + 网表输出 + 电气规则检查

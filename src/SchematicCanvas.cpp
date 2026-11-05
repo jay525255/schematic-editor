@@ -2337,7 +2337,7 @@ void SchematicCanvas::FinishWire(bool returnToSelect)
         OnWireFinished();
 }
 
-void SchematicCanvas::DeleteSelection()
+void SchematicCanvas::DeleteSelection(const wxString& label)
 {
     if (!HasSelection())
         return;
@@ -2346,8 +2346,10 @@ void SchematicCanvas::DeleteSelection()
     const int wireCount      = GetSelectedWireCount();
     const int textCount      = GetSelectedTextCount();
 
-    PushUndo(wxString::Format(L"删除 %d 元件 / %d 线段 / %d 文本",
-                              componentCount, wireCount, textCount));
+    PushUndo(label.IsEmpty()
+                 ? wxString::Format(L"删除 %d 元件 / %d 线段 / %d 文本",
+                                    componentCount, wireCount, textCount)
+                 : label);
 
     // 从后往前删，避免下标失效
     for (int k = static_cast<int>(m_selComponents.size()) - 1; k >= 0; --k)
@@ -2369,6 +2371,363 @@ void SchematicCanvas::DeleteSelection()
     if (OnStatusMessage)
         OnStatusMessage(wxString::Format(L"已删除 %d 个元件、%d 条线段、%d 段文本",
                                          componentCount, wireCount, textCount));
+
+    NotifySelectionChanged();
+
+    Refresh();
+}
+
+// ============================================================
+//  剪贴板：复制 / 剪切 / 粘贴（任务 4）
+// ============================================================
+
+// 从原件位号推一个新位号：U1 复制出来 → U2、U3…
+wxString SchematicCanvas::NextRefdes(const wxString& protoRefdes, const wxString& compName)
+{
+    // 前缀 = 末尾数字之前的那些字符：U12 → "U", R3 → "R"
+    int split = static_cast<int>(protoRefdes.length());
+
+    while (split > 0 && protoRefdes[split - 1] >= L'0' && protoRefdes[split - 1] <= L'9')
+        --split;
+
+    const wxString prefix = protoRefdes.Left(split);
+
+    // 电源符号这类"位号就是名字"的元件（VCC / GND）不参与计数，原样保留；
+    // 以 '#' 开头的位号也不自动编号（KiCad 里 #PWR 之类）
+    if (prefix.IsEmpty() || prefix.StartsWith(L"#"))
+        return protoRefdes;
+
+    const int counter = ++m_refCount[compName];
+
+    return wxString::Format(L"%s%d", prefix, counter);
+}
+
+void SchematicCanvas::CopySelection()
+{
+    if (!HasSelection())
+    {
+        if (OnStatusMessage)
+            OnStatusMessage(L"没有选中任何对象 — 先框选或用 Ctrl+单击选中要复制的元件");
+        return;
+    }
+
+    m_clip.components.clear();
+    m_clip.wires.clear();
+    m_clip.texts.clear();
+
+    // 包围盒：粘贴时拿它的左上角当锚点，贴出来的相对位置和复制时一致
+    bool has  = false;
+    int  minX = 0, minY = 0, maxX = 0, maxY = 0;
+
+    auto grow = [&](int x, int y)
+    {
+        if (!has)
+        {
+            minX = maxX = x;
+            minY = maxY = y;
+            has  = true;
+            return;
+        }
+
+        minX = std::min(minX, x);
+        maxX = std::max(maxX, x);
+        minY = std::min(minY, y);
+        maxY = std::max(maxY, y);
+    };
+
+    for (int index : m_selComponents)
+    {
+        if (index < 0 || index >= static_cast<int>(m_components.size()))
+            continue;
+
+        const ComponentInstance& comp = m_components[index];
+
+        m_clip.components.push_back(comp);
+
+        grow(comp.pos.x, comp.pos.y);
+        grow(comp.pos.x + comp.w, comp.pos.y + comp.h);
+    }
+
+    for (int index : m_selWires)
+    {
+        if (index < 0 || index >= static_cast<int>(m_wires.size()))
+            continue;
+
+        const Wire& wire = m_wires[index];
+
+        m_clip.wires.push_back(wire);
+
+        grow(wire.a.x, wire.a.y);
+        grow(wire.b.x, wire.b.y);
+    }
+
+    for (int index : m_selTexts)
+    {
+        if (index < 0 || index >= static_cast<int>(m_texts.size()))
+            continue;
+
+        const TextItem& item = m_texts[index];
+
+        m_clip.texts.push_back(item);
+
+        grow(item.pos.x, item.pos.y);
+    }
+
+    m_clip.anchor = has ? wxPoint(minX, minY) : wxPoint(0, 0);
+
+    if (OnStatusMessage)
+        OnStatusMessage(wxString::Format(L"已复制 %d 个元件、%d 条线段、%d 段文本（Ctrl+V 粘贴）",
+                                         static_cast<int>(m_clip.components.size()),
+                                         static_cast<int>(m_clip.wires.size()),
+                                         static_cast<int>(m_clip.texts.size())));
+}
+
+void SchematicCanvas::CutSelection()
+{
+    if (!HasSelection())
+    {
+        if (OnStatusMessage)
+            OnStatusMessage(L"没有选中任何对象 — 剪切前先选中");
+        return;
+    }
+
+    const int componentCount = GetSelectedComponentCount();
+    const int wireCount      = GetSelectedWireCount();
+    const int textCount      = GetSelectedTextCount();
+
+    CopySelection();
+    DeleteSelection(L"剪切");
+
+    if (OnStatusMessage)
+        OnStatusMessage(wxString::Format(L"已剪切 %d 个元件、%d 条线段、%d 段文本（Ctrl+V 粘贴回来）",
+                                         componentCount, wireCount, textCount));
+}
+
+void SchematicCanvas::PasteClipboard()
+{
+    if (!CanPaste())
+    {
+        if (OnStatusMessage)
+            OnStatusMessage(L"剪贴板是空的 — 先选中对象再按 Ctrl+C 复制");
+        return;
+    }
+
+    // 粘贴位置：让剪贴板包围盒的左上角落在光标处（网格对齐），
+    // 这样"贴着鼠标放"，和大多数画图软件一致。光标不在画布上时往右下挪两格。
+    const wxPoint target = m_hasCursor
+                               ? SnapToGrid(m_cursorWorld)
+                               : m_clip.anchor + wxPoint(m_gridStep * 2, m_gridStep * 2);
+
+    const wxPoint delta(target.x - m_clip.anchor.x, target.y - m_clip.anchor.y);
+
+    PushUndo(L"粘贴");
+
+    ClearSelectionInternal();
+
+    for (const ComponentInstance& proto : m_clip.components)
+    {
+        ComponentInstance comp = proto;
+
+        comp.id     = ++m_nextComponentId;
+        comp.pos    = wxPoint(comp.pos.x + delta.x, comp.pos.y + delta.y);
+        comp.refdes = NextRefdes(proto.refdes, proto.name);
+
+        m_components.push_back(comp);
+        m_selComponents.push_back(static_cast<int>(m_components.size()) - 1);
+    }
+
+    for (const Wire& proto : m_clip.wires)
+    {
+        Wire wire = proto;
+
+        wire.id = ++m_nextWireId;
+        wire.a  = wxPoint(wire.a.x + delta.x, wire.a.y + delta.y);
+        wire.b  = wxPoint(wire.b.x + delta.x, wire.b.y + delta.y);
+
+        m_wires.push_back(wire);
+        m_selWires.push_back(static_cast<int>(m_wires.size()) - 1);
+    }
+
+    for (const TextItem& proto : m_clip.texts)
+    {
+        TextItem item = proto;
+
+        item.pos = wxPoint(item.pos.x + delta.x, item.pos.y + delta.y);
+
+        m_texts.push_back(item);
+        m_selTexts.push_back(static_cast<int>(m_texts.size()) - 1);
+    }
+
+    m_netsDirty    = true;
+    m_highlightNet = -1;
+    Touch();
+
+    GetNetGraph();
+
+    if (OnStatusMessage)
+        OnStatusMessage(wxString::Format(L"已粘贴 %d 个元件、%d 条线段、%d 段文本（位号已重新编号）",
+                                         static_cast<int>(m_clip.components.size()),
+                                         static_cast<int>(m_clip.wires.size()),
+                                         static_cast<int>(m_clip.texts.size())));
+
+    NotifySelectionChanged();
+
+    Refresh();
+}
+
+// ============================================================
+//  旋转 / 翻转（任务 4）
+// ============================================================
+void SchematicCanvas::RotateSelection(int quartersCW)
+{
+    const int step = (quartersCW >= 0) ? 1 : 3;   // 逆时针 90° = 顺时针 270°
+
+    TransformSelection([step](ComponentInstance& comp) { RotateComponent(comp, step); },
+                       (quartersCW >= 0) ? wxString(L"顺时针旋转 90°") : wxString(L"逆时针旋转 90°"));
+}
+
+void SchematicCanvas::FlipSelection(bool horizontal)
+{
+    TransformSelection([horizontal](ComponentInstance& comp) { MirrorComponent(comp, horizontal); },
+                       horizontal ? wxString(L"水平翻转") : wxString(L"垂直翻转"));
+}
+
+void SchematicCanvas::TransformSelection(const std::function<void(ComponentInstance&)>& apply,
+                                         const wxString& label)
+{
+    if (m_selComponents.empty())
+    {
+        if (OnStatusMessage)
+            OnStatusMessage(L"先选中要变换的元件（旋转 / 翻转只作用于元件，导线不动）");
+        return;
+    }
+
+    PushUndo(label);
+
+    // ---- 1. 先记下"哪些导线端点正贴在选中元件的引脚上" ----
+    //  这里记引脚**名字**而不是下标：变换之后引脚会按新位置重新排序，
+    //  下标会指到别的引脚上去。
+    struct Attach
+    {
+        int      wire  = -1;
+        int      end   = 0;      // 0 = a 端，1 = b 端
+        int      comp  = -1;
+        wxString pin;
+    };
+
+    std::vector<Attach> attach;
+
+    for (int ci : m_selComponents)
+    {
+        if (ci < 0 || ci >= static_cast<int>(m_components.size()))
+            continue;
+
+        const ComponentInstance& comp = m_components[ci];
+
+        for (size_t k = 0; k < comp.pins.size(); ++k)
+        {
+            const wxPoint pinPos = PinPosition(comp, static_cast<int>(k));
+
+            for (size_t wi = 0; wi < m_wires.size(); ++wi)
+            {
+                if (m_wires[wi].a == pinPos)
+                {
+                    Attach item;
+                    item.wire = static_cast<int>(wi);
+                    item.end  = 0;
+                    item.comp = ci;
+                    item.pin  = comp.pins[k].name;
+                    attach.push_back(item);
+                }
+
+                if (m_wires[wi].b == pinPos)
+                {
+                    Attach item;
+                    item.wire = static_cast<int>(wi);
+                    item.end  = 1;
+                    item.comp = ci;
+                    item.pin  = comp.pins[k].name;
+                    attach.push_back(item);
+                }
+            }
+        }
+    }
+
+    // ---- 2. 变换元件本体（引脚位置、朝向随之重算）----
+    for (int ci : m_selComponents)
+    {
+        if (ci >= 0 && ci < static_cast<int>(m_components.size()))
+            apply(m_components[ci]);
+    }
+
+    // ---- 3. 让导线端点跟着引脚走 ----
+    //  只有"跟过去之后这条导线仍然是水平/竖直"才搬端点；
+    //  否则宁可让导线留在原地（视觉上断开，用户能看出来要重连），也不画斜线。
+    int followed = 0;
+    int kept     = 0;
+
+    for (const Attach& item : attach)
+    {
+        if (item.wire < 0 || item.wire >= static_cast<int>(m_wires.size()))
+            continue;
+
+        ComponentInstance& comp = m_components[item.comp];
+
+        int pinIndex = -1;
+
+        for (size_t k = 0; k < comp.pins.size(); ++k)
+        {
+            if (comp.pins[k].name == item.pin)
+            {
+                pinIndex = static_cast<int>(k);
+                break;
+            }
+        }
+
+        if (pinIndex < 0)
+            continue;
+
+        Wire&   wire   = m_wires[item.wire];
+        wxPoint& moved = (item.end == 0) ? wire.a : wire.b;
+        const wxPoint other = (item.end == 0) ? wire.b : wire.a;   // 另一端固定不动
+        const wxPoint fresh = PinPosition(comp, pinIndex);
+
+        if (moved == fresh)
+        {
+            ++followed;      // 转 180° 之类，引脚其实没动
+            continue;
+        }
+
+        if (other.x == fresh.x || other.y == fresh.y)
+        {
+            moved = fresh;
+            ++followed;
+        }
+        else
+        {
+            ++kept;
+        }
+    }
+
+    m_netsDirty    = true;
+    m_highlightNet = -1;
+    Touch();
+
+    GetNetGraph();
+
+    if (OnStatusMessage)
+    {
+        wxString text = wxString::Format(L"%s：%d 个元件", label,
+                                         static_cast<int>(m_selComponents.size()));
+
+        if (followed > 0)
+            text += wxString::Format(L"，%d 个导线端点跟随", followed);
+
+        if (kept > 0)
+            text += wxString::Format(L"，%d 个导线端点留在原位（跟过去会变成斜线）", kept);
+
+        OnStatusMessage(text);
+    }
 
     NotifySelectionChanged();
 

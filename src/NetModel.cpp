@@ -223,6 +223,197 @@ std::vector<Pin> MakePins(const wxString& compName,
 }
 
 // ============================================================
+//  旋转 / 镜像（任务 4）
+//
+//  为什么不用"把引脚一个个换边"的写法：
+//    与门两个输入脚在左、一个输出脚在右。转 90° 之后三个脚要分别跑到
+//    上 / 右…位置，而且同一条边上如果原来有两个引脚，它们的先后顺序也会
+//    反过来（顺时针转，左边自上而下 → 上边自右向左）。
+//    逐条写规则很容易漏，改成"先变换锚点坐标，再从坐标反推边和槽号"，
+//    一条通用逻辑就覆盖了所有情况，自定义元件（3 输入与门之类）也自动正确。
+//
+//  关于 xform 的合成（D4 对称群）：
+//    记 P(i) 为"作者坐标系 → 屏幕"的净变换，
+//      i <  4：P = R(i×90°)
+//      i >= 4：P = R((i-4)×90°) ∘ MirrorH
+//    用户再执行一次变换 A（A 作用在屏幕上，即左乘），新的下标按下面规则算：
+//      * 旋转 +90°：  A = R(90°)          → 旋转分量 +1，镜像位不变
+//      * 水平翻转：   A = MirrorH         → 见 MirrorComponent 里的推导
+//      * 垂直翻转：   A = R(180°)∘MirrorH （垂直翻转 = 转 180° 再左右翻）
+//    SymbolPainter 绘制时按同一套约定还原 P(i)，两边必须严格一致，
+//    否则会出现"门转过去了、引脚没转"的错位。
+// ============================================================
+
+namespace
+{
+
+Side RotateSideCW(Side s)
+{
+    switch (s)
+    {
+        case Side::Left:   return Side::Top;
+        case Side::Top:    return Side::Right;
+        case Side::Right:  return Side::Bottom;
+        case Side::Bottom: return Side::Left;
+    }
+
+    return s;
+}
+
+// 按"锚点在哪条边、沿边排第几"重建 side / slot / count
+void RebuildPinsFromAnchors(ComponentInstance& comp, const std::vector<wxPoint>& rel)
+{
+    const int w = comp.w;
+    const int h = comp.h;
+
+    std::vector<std::vector<size_t>> bySide(4);   // 0=Left 1=Right 2=Top 3=Bottom
+
+    for (size_t k = 0; k < comp.pins.size() && k < rel.size(); ++k)
+    {
+        const wxPoint& p = rel[k];
+
+        int side = 3;                        // 默认 Bottom（同时兜住"落在框内部"的异常情况）
+
+        if (p.x <= 0)
+            side = 0;                        // 左边
+        else if (p.x >= w)
+            side = 1;                        // 右边
+        else if (p.y <= 0)
+            side = 2;                        // 上边
+        else if (p.y >= h)
+            side = 3;                        // 下边
+
+        bySide[side].push_back(k);
+    }
+
+    static const Side kSideOf[4] = { Side::Left, Side::Right, Side::Top, Side::Bottom };
+
+    for (int s = 0; s < 4; ++s)
+    {
+        std::vector<size_t>& list = bySide[s];
+        const bool verticalEdge   = (s <= 1);   // 左右边按 y 排序，上下边按 x 排序
+
+        std::sort(list.begin(), list.end(),
+                  [&rel, verticalEdge](size_t a, size_t b)
+                  {
+                      return verticalEdge ? (rel[a].y < rel[b].y)
+                                          : (rel[a].x < rel[b].x);
+                  });
+
+        const int n = static_cast<int>(list.size());
+
+        for (int i = 0; i < n; ++i)
+        {
+            Pin& pin = comp.pins[list[i]];
+            pin.side  = kSideOf[s];
+            pin.slot  = i;
+            pin.count = std::max(1, n);
+        }
+    }
+}
+
+// 把当前引脚锚点取出来（相对外框左上角）
+std::vector<wxPoint> CollectAnchors(const ComponentInstance& comp)
+{
+    std::vector<wxPoint> rel;
+    rel.reserve(comp.pins.size());
+
+    for (size_t k = 0; k < comp.pins.size(); ++k)
+    {
+        const wxPoint a = PinAnchor(comp, static_cast<int>(k));
+        rel.push_back(wxPoint(a.x - comp.pos.x, a.y - comp.pos.y));
+    }
+
+    return rel;
+}
+
+} // namespace
+
+void RotateComponent(ComponentInstance& comp, int quartersCW)
+{
+    const int q = ((quartersCW % 4) + 4) % 4;
+
+    if (q == 0)
+        return;
+
+    std::vector<wxPoint> rel = CollectAnchors(comp);
+
+    const wxPoint centre(comp.pos.x + comp.w / 2, comp.pos.y + comp.h / 2);
+
+    int w = comp.w;
+    int h = comp.h;
+
+    // 顺时针 90°：局部点 (x, y) → (h - y, x)，外框由 w×h 变成 h×w
+    for (int i = 0; i < q; ++i)
+    {
+        for (wxPoint& p : rel)
+            p = wxPoint(h - p.y, p.x);
+
+        std::swap(w, h);
+    }
+
+    comp.w   = w;
+    comp.h   = h;
+    comp.pos = wxPoint(centre.x - w / 2, centre.y - h / 2);
+
+    const int rot = (comp.xform >= 4) ? (comp.xform - 4) : comp.xform;
+    const int mir = (comp.xform >= 4) ? 4 : 0;
+    comp.xform = mir + (rot + q) % 4;
+
+    RebuildPinsFromAnchors(comp, rel);
+}
+
+void MirrorComponent(ComponentInstance& comp, bool horizontal)
+{
+    if (comp.pins.empty() && comp.w <= 0)
+        return;
+
+    std::vector<wxPoint> rel = CollectAnchors(comp);
+
+    if (horizontal)
+    {
+        for (wxPoint& p : rel)
+            p.x = comp.w - p.x;
+    }
+    else
+    {
+        for (wxPoint& p : rel)
+            p.y = comp.h - p.y;
+    }
+
+    // 变换合成（推导见本节开头注释）：
+    //   当前 P = R(k)∘S^b，左乘 A 之后求新的 (k', b')
+    //   水平翻转 A = S：
+    //       b = 0 → S∘R(k) = R(-k)∘S   → k' = -k, b' = 1
+    //       b = 1 → S∘R(k)∘S = R(-k)   → k' = -k, b' = 0
+    //   垂直翻转 A = R(180°)∘S：
+    //       b = 0 → R(2)∘S∘R(k) = R(2-k)∘S → k' = 2-k, b' = 1
+    //       b = 1 → R(2)∘S∘R(k)∘S = R(2-k) → k' = 2-k, b' = 0
+    const int rot     = (comp.xform >= 4) ? (comp.xform - 4) : comp.xform;
+    const bool mirrored = (comp.xform >= 4);
+
+    const int newRot = horizontal ? ((4 - rot) % 4)
+                                  : ((2 - rot % 4 + 4) % 4);
+    const bool newMir = !mirrored;
+
+    comp.xform = (newMir ? 4 : 0) + newRot;
+
+    RebuildPinsFromAnchors(comp, rel);
+}
+
+wxString DescribeXform(int xform)
+{
+    static const wchar_t* kAngle[4] = { L"0°", L"顺时针 90°", L"180°", L"顺时针 270°" };
+
+    const int rot = (xform >= 4) ? (xform - 4) : xform;
+
+    if (xform >= 4)
+        return wxString::Format(L"先水平镜像，再转 %s", kAngle[rot]);
+
+    return kAngle[rot];
+}
+
+// ============================================================
 //  并查集
 // ============================================================
 

@@ -286,6 +286,13 @@ void MainFrame::CreateMenus()
     editMenu->AppendSeparator();
     editMenu->Append(ID_EDIT_SELECT_ALL,   L"全选\tCtrl+A");
     editMenu->Append(ID_EDIT_DESELECT_ALL, L"取消选择\tCtrl+Shift+A");
+    editMenu->AppendSeparator();
+    // 旋转 / 翻转只用 Ctrl 组合键当加速键：单独的 R / H 会把
+    // 元件库搜索框里的字母也吃掉。
+    editMenu->Append(ID_EDIT_ROTATE_CW,  L"旋转 90°（顺时针）\tCtrl+R");
+    editMenu->Append(ID_EDIT_ROTATE_CCW, L"旋转 90°（逆时针）\tCtrl+Shift+R");
+    editMenu->Append(ID_EDIT_FLIP_H,     L"水平翻转（左右）\tCtrl+H");
+    editMenu->Append(ID_EDIT_FLIP_V,     L"垂直翻转（上下）\tCtrl+Shift+H");
 
     menuBar->Append(editMenu, L"编辑(&E)");
 
@@ -640,6 +647,7 @@ void MainFrame::UpdateProperties()
         m_props->AddIntRow(L"X 坐标", comp->pos.x);
         m_props->AddIntRow(L"Y 坐标", comp->pos.y);
         m_props->AddIntRow(L"引脚数", static_cast<int>(comp->pins.size()));
+        m_props->AddRow(L"旋转 / 镜像", DescribeXform(comp->xform));
 
         m_props->AddCategory(L"PCB 信息");
         m_props->AddRow(L"封装",
@@ -1165,6 +1173,45 @@ void MainFrame::OnCommand(wxCommandEvent& event)
 
         case ID_EDIT_DESELECT_ALL:
             m_canvas->DeselectAll();
+            return;
+
+        case wxID_CUT:
+            m_canvas->CutSelection();
+            UpdateStatusBar();
+            return;
+
+        case wxID_COPY:
+            m_canvas->CopySelection();
+            UpdateStatusBar();
+            return;
+
+        case wxID_PASTE:
+            m_canvas->PasteClipboard();
+            UpdateStatusBar();
+            return;
+
+        case ID_EDIT_ROTATE_CW:
+            m_canvas->RotateSelection(1);
+            UpdateStatusBar();
+            UpdateProperties();
+            return;
+
+        case ID_EDIT_ROTATE_CCW:
+            m_canvas->RotateSelection(-1);
+            UpdateStatusBar();
+            UpdateProperties();
+            return;
+
+        case ID_EDIT_FLIP_H:
+            m_canvas->FlipSelection(true);
+            UpdateStatusBar();
+            UpdateProperties();
+            return;
+
+        case ID_EDIT_FLIP_V:
+            m_canvas->FlipSelection(false);
+            UpdateStatusBar();
+            UpdateProperties();
             return;
 
         case wxID_UNDO:

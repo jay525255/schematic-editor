@@ -81,6 +81,41 @@ ShapeSpec SpecOf(const wxString& name, ComponentKind kind)
 }
 
 // ------------------------------------------------------------
+// 旋转 / 镜像之后，引脚存的是"变换后"的边。
+// 判定形状（电阻 vs 逻辑门、端口朝哪边）必须看"作者坐标系"的边，
+// 所以这里先把边还原回去。
+//
+//   净变换 P = R(k×90°) ∘ (是否镜像 ? 水平镜像 : 恒等)
+//   逆变换   = (是否镜像 ? 水平镜像 : 恒等) ∘ R(-k×90°)
+// ------------------------------------------------------------
+Side AuthoredSide(Side s, int xform)
+{
+    const int k = xform % 4;
+
+    // 逆时针转回去 = 再多转 (4-k) 次顺时针
+    for (int i = 0; i < (4 - k) % 4; ++i)
+    {
+        switch (s)
+        {
+            case Side::Left:   s = Side::Bottom; break;
+            case Side::Bottom: s = Side::Right;  break;
+            case Side::Right:  s = Side::Top;    break;
+            case Side::Top:    s = Side::Left;   break;
+        }
+    }
+
+    if (xform >= 4)   // 水平镜像：左右互换
+    {
+        if (s == Side::Left)
+            s = Side::Right;
+        else if (s == Side::Right)
+            s = Side::Left;
+    }
+
+    return s;
+}
+
+// ------------------------------------------------------------
 // ComponentInstance 里没有 kind 字段（.ses 也只存引脚），
 // 所以这里从引脚摆放位置反推形态——和 NetModel::MakePins 的规则互为逆运算。
 // ------------------------------------------------------------
@@ -90,7 +125,7 @@ ComponentKind KindOfInstance(const ComponentInstance& comp)
 
     for (const Pin& pin : comp.pins)
     {
-        switch (pin.side)
+        switch (AuthoredSide(pin.side, comp.xform))
         {
             case Side::Left:   hasLeft   = true; break;
             case Side::Right:  hasRight  = true; break;
@@ -155,11 +190,45 @@ void PaintSymbolBody(wxGraphicsContext* gc,
 {
     const ShapeSpec spec = SpecOf(comp.name, KindOfInstance(comp));
 
-    const double w = comp.w;
-    const double h = comp.h;
+    // ---- 作者坐标系尺寸 ----
+    //  转 90°/270° 时 comp.w/h 已经互换过；形状一律按"作者坐标系"画，
+    //  最后由 gc 的整体变换转成实际朝向——这样 20 多种形状只需要写一遍。
+    const bool   swapped = (comp.xform % 4) % 2 != 0;
+    const double w       = swapped ? comp.h : comp.w;
+    const double h       = swapped ? comp.w : comp.h;
+
+    // ---- 实际使用的映射：原点挪到作者框的左上角 ----
+    SymbolPlacement eff = place;
+
+    if (comp.xform != 0)
+    {
+        // 旋转/镜像都绕外框中心做，中心在两种坐标系里是同一个点
+        const wxPoint2DDouble c = place.Map(comp.w / 2.0, comp.h / 2.0);
+
+        eff.origin = wxPoint2DDouble(c.m_x - w * 0.5 * place.scale,
+                                     c.m_y - h * 0.5 * place.scale);
+
+        // 变换顺序：先把点平移到以中心为原点 → 旋转 → 镜像 → 平移回去
+        // 注意 wxGraphicsContext 是右乘（后调用的先作用在点上），
+        // 所以这里要"先 Rotate 再 Scale"，才是"先镜像再旋转"的效果，
+        // 和 NetModel::RotateComponent / MirrorComponent 的约定一致。
+        gc->PushState();
+        gc->Translate(c.m_x, c.m_y);
+
+        const int k = comp.xform % 4;
+
+        if (k != 0)
+            gc->Rotate(k * 3.14159265358979323846 / 2.0);
+
+        if (comp.xform >= 4)
+            gc->Scale(-1.0, 1.0);
+
+        gc->Translate(-c.m_x, -c.m_y);
+    }
+
     const double s = place.scale;
 
-    const Mapper m = MapperOf(place);
+    const Mapper m = MapperOf(eff);
 
     // 反相小圈半径（世界单位）
     const double r = std::min(h * 0.14, w * 0.11);
@@ -335,7 +404,8 @@ void PaintSymbolBody(wxGraphicsContext* gc,
         {
             const double tip = std::min(h * 0.5, w * 0.35);
 
-            const bool tipLeft = !comp.pins.empty() && comp.pins.front().side == Side::Left;
+            const bool tipLeft = !comp.pins.empty() &&
+                                 AuthoredSide(comp.pins.front().side, comp.xform) == Side::Left;
 
             wxGraphicsPath path = gc->CreatePath();
 
@@ -602,6 +672,9 @@ void PaintSymbolBody(wxGraphicsContext* gc,
         default:
             break;
     }
+
+    if (comp.xform != 0)
+        gc->PopState();   // 与上面的 PushState 配对，别把变换漏给"引脚 / 文字"
 }
 
 // ============================================================
