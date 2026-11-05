@@ -181,6 +181,13 @@ public:
     void RotateSelection(int quartersCW);
     void FlipSelection(bool horizontal);
 
+    // ---- 属性表编辑（任务 4）------------------------------
+    //  属性面板不认识模型，用户改完把 (语义键, 新值) 交到这里统一落盘。
+    //  键：comp.refdes / comp.x / comp.y / comp.value / comp.footprint
+    //      text.content / text.x / text.y / text.size
+    //  成功返回 true；被拒绝时把原因写进 error（界面据此提示并还原）。
+    bool ApplyPropertyEdit(const wxString& key, const wxString& text, wxString* error);
+
     // ---- 撤销 / 重做（快照式）-------------------------------
     //  每次“会改变文档的操作”之前先压一份完整快照。
     //  之所以不用 Command 模式：本工程元件量级只有几百，

@@ -54,6 +54,11 @@ private:
     void OnCanvasSelectionChanged();
     void OnCanvasViewChanged();
 
+    // ---- 属性表编辑 ----
+    //  属性面板改完一行 → 交给画布改模型 → 刷新标题 / 状态栏 / 属性表。
+    //  被拒绝时（重号、非法坐标等）提示原因并把界面还原成模型里的真实值。
+    void ApplyPropertyEdit(const wxString& key, const wxVariant& value);
+
     // ---- 命令统一入口 ----
     //  绑定区间 [wxID_LOWEST, ID_SIM_STOP]，既覆盖全部菜单项也覆盖工具栏；
     //  已在 switch 中实现的走真实逻辑，其余统一到底部的“尚未实现”分支。

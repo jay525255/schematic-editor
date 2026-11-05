@@ -31,7 +31,27 @@ PropertyPanel::PropertyPanel(wxWindow* parent)
                                 wxPG_DEFAULT_STYLE | wxBORDER_NONE);
 
     m_grid->SetBackgroundColour(wxColour(255, 255, 255));
-    m_grid->SetSplitterPosition(96);
+
+    // wxPropertyGrid 在尺寸变化时会把分栏位置按比例重算，光设一次不够，
+    // 每次改变大小都重新按 58% 摆一次（宽度没变就跳过，避免自激）。
+    //  注意：不要用 SetColumnProportion()——它要求网格带
+    //  wxPG_SPLITTER_AUTO_CENTER 样式，否则 Debug 版会弹断言，
+    //  SetSplitterPosition() 才是安全的写法。
+    m_grid->Bind(wxEVT_SIZE, [this](wxSizeEvent& event)
+    {
+        event.Skip();
+
+        const int width = m_grid->GetClientSize().x;
+
+        if (width > 200 && width != m_lastSplitWidth)
+        {
+            m_lastSplitWidth = width;
+            m_grid->SetSplitterPosition((width * 58) / 100);
+        }
+    });
+
+    // 用户在网格里改了值 → 交给 OnEdit 回调处理
+    m_grid->Bind(wxEVT_PG_CHANGED, &PropertyPanel::OnGridChanged, this);
 
     // ---- 布局 ----
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
@@ -49,9 +69,12 @@ PropertyPanel::PropertyPanel(wxWindow* parent)
 // ------------------------------------------------------------
 void PropertyPanel::Begin(const wxString& title)
 {
+    m_filling = true;
     m_header->SetLabel(title);
     m_grid->Clear();
+    m_keyOf.clear();
     m_seq = 0;
+    m_filling = false;
 }
 
 // ------------------------------------------------------------
@@ -62,22 +85,103 @@ void PropertyPanel::AddCategory(const wxString& name)
 }
 
 // ------------------------------------------------------------
+wxPGProperty* PropertyPanel::NewRow(const wxString& label,
+                                    const wxString& key,
+                                    wxPGProperty* property,
+                                    bool editable)
+{
+    if (!editable)
+        property->ChangeFlag(wxPG_PROP_READONLY, true);
+
+    m_grid->Append(property);
+
+    if (editable && !key.IsEmpty())
+    {
+        m_keyOf[property->GetName()] = key;
+
+        // 可编辑的行给一点暖色底，一眼能看出“这一行能改”；
+        // 只读行保持纯白，两种行不用点开也分得清。
+        m_grid->SetPropertyBackgroundColour(property->GetName(), wxColour(255, 250, 232));
+    }
+
+    return property;
+}
+
+// ------------------------------------------------------------
 void PropertyPanel::AddRow(const wxString& label, const wxString& value)
 {
-    wxPGProperty* property = m_grid->Append(
-        new wxStringProperty(label, wxString::Format(L"@row%d", ++m_seq), value));
-
-    // 当前阶段属性表只做展示，不允许编辑
-    property->ChangeFlag(wxPG_PROP_READONLY, true);
+    NewRow(label,
+           wxEmptyString,
+           new wxStringProperty(label, wxString::Format(L"@row%d", ++m_seq), value),
+           false);
 }
 
 // ------------------------------------------------------------
 void PropertyPanel::AddIntRow(const wxString& label, int value)
 {
-    wxPGProperty* property = m_grid->Append(
-        new wxIntProperty(label, wxString::Format(L"@row%d", ++m_seq), value));
+    NewRow(label,
+           wxEmptyString,
+           new wxIntProperty(label, wxString::Format(L"@row%d", ++m_seq), value),
+           false);
+}
 
-    property->ChangeFlag(wxPG_PROP_READONLY, true);
+// ------------------------------------------------------------
+void PropertyPanel::AddEditRow(const wxString& label, const wxString& value,
+                               const wxString& key)
+{
+    NewRow(label,
+           key,
+           new wxStringProperty(label, wxString::Format(L"@row%d", ++m_seq), value),
+           true);
+}
+
+// ------------------------------------------------------------
+void PropertyPanel::AddEditIntRow(const wxString& label, int value, const wxString& key)
+{
+    NewRow(label,
+           key,
+           new wxIntProperty(label, wxString::Format(L"@row%d", ++m_seq), value),
+           true);
+}
+
+// ------------------------------------------------------------
+void PropertyPanel::AddEditChoiceRow(const wxString& label,
+                                     const wxArrayString& choices,
+                                     const wxString& value,
+                                     const wxString& key)
+{
+    wxPGProperty* property = NewRow(
+        label,
+        key,
+        new wxEnumProperty(label, wxString::Format(L"@row%d", ++m_seq), choices),
+        true);
+
+    // 当前值不在候选里时（用户手改过的封装等），临时塞进去一个，
+    // 否则 wxPropertyGrid 会把它显示成第一项，看起来像"被改了"
+    if (choices.Index(value) == wxNOT_FOUND && !value.IsEmpty())
+        property->SetValueFromString(value);
+
+    property->SetValueFromString(value);
+}
+
+// ------------------------------------------------------------
+void PropertyPanel::OnGridChanged(wxPropertyGridEvent& event)
+{
+    if (m_filling)
+        return;
+
+    wxPGProperty* property = event.GetProperty();
+
+    if (!property)
+        return;
+
+    const auto it = m_keyOf.find(property->GetName());
+
+    if (it == m_keyOf.end())
+        return;   // 不是可编辑行，忽略
+
+    if (OnEdit)
+        OnEdit(it->second, property->GetValue());
 }
 
 // ------------------------------------------------------------

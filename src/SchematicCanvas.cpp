@@ -121,8 +121,9 @@ bool SchematicCanvas::FindNearbyAttachPoint(const wxPoint& world, wxPoint& out,
                                             int* kind, wxString* label) const
 {
     // 吸附半径按屏幕像素换算，保证任何缩放下手感一致。
-    // 12px 比原来的 10px 稍微大一点：靠近引脚时更容易“咬住”。
-    const double radius = std::max(5.0, 12.0 / m_zoom);
+    // 同时保证它永远不小于 1.5 个网格 —— 否则放大到 200% 时半径只剩 6 个
+    // 世界单位，而网格是 10，鼠标吸附到最近格点后已经跑出半径，就"吸不住"了。
+    const double radius = std::max(std::max(5.0, 12.0 / m_zoom), m_gridStep * 1.5);
 
     double   bestDist = radius;
     bool     found    = false;
@@ -168,6 +169,43 @@ bool SchematicCanvas::FindNearbyAttachPoint(const wxPoint& world, wxPoint& out,
                     bestLabel = L"导线端点";
                 }
             }
+        }
+    }
+
+    // 3) 导线"身上"（T 型连接）
+    //
+    // 这里故意用"吸附到网格之后"的那个点去判断，而不是鼠标的原始位置：
+    // 网格点和一条横平竖直的导线要么恰好落在线上（距离 0），要么差整整
+    // 一格以上。于是只有"格点正好压在线上"才算 T 型连接，画一条跨过别人
+    // 导线的线时不会被悄悄连上去（交叉导线本来就不连通）。
+    if (!found)
+    {
+        const wxPoint grid = SnapToGrid(world);
+
+        for (const Wire& w : m_wires)
+        {
+            const int minX = std::min(w.a.x, w.b.x);
+            const int maxX = std::max(w.a.x, w.b.x);
+            const int minY = std::min(w.a.y, w.b.y);
+            const int maxY = std::max(w.a.y, w.b.y);
+
+            const bool inside = grid.x >= minX && grid.x <= maxX &&
+                                grid.y >= minY && grid.y <= maxY;
+
+            if (!inside)
+                continue;
+
+            // 点必须真的在线段上（横线看 y、竖线看 x）
+            const bool onLine = (w.a.y == w.b.y) ? (grid.y == w.a.y) : (grid.x == w.a.x);
+
+            if (!onLine)
+                continue;
+
+            out       = grid;
+            found     = true;
+            bestKind  = 3;
+            bestLabel = L"导线上（T 型连接）";
+            break;
         }
     }
 
@@ -1271,9 +1309,10 @@ void SchematicCanvas::DrawSnapMarker(wxGraphicsContext* gc)
 
     const wxPoint2DDouble p = ToScreen(wxPoint2DDouble(m_snapPoint.x, m_snapPoint.y));
 
-    // 引脚用亮绿，导线端点用橙色 —— 颜色本身就在告诉用户接的是什么
+    // 引脚亮绿、导线端点橙、导线身上（T 型）蓝 —— 颜色本身就在告诉用户接的是什么
     const wxColour accent = (m_snapKind == 1) ? wxColour(0, 190, 90)
-                                              : wxColour(230, 130, 20);
+                            : (m_snapKind == 3) ? wxColour(20, 110, 220)
+                                                : wxColour(230, 130, 20);
 
     // 1) 外面一圈虚线光环（半径随缩放稍微变化，但保持像素量级）
     const double r = std::max(11.0, 11.0 * m_zoom);
@@ -2241,7 +2280,15 @@ void SchematicCanvas::AddWire(const wxPoint& a, const wxPoint& b)
 
 void SchematicCanvas::HandleWireClick(const wxPoint& world)
 {
-    const wxPoint p = SnapForWiring(world);
+    // 吸附：引脚 > 导线端点 > 导线身上（T 型）> 网格。
+    // 一旦吸到了连接点，就把落点直接改成那个点 —— 这样导线端头一定
+    // 正好落在引脚/端点上，不会留下 1 格的短桩，也就不会"看着接上了、
+    // 其实网络是断的"。
+    wxPoint  attachPoint;
+    int      attachKind = 0;
+    const bool onAttach = FindNearbyAttachPoint(world, attachPoint, &attachKind);
+
+    const wxPoint p = onAttach ? attachPoint : SnapForWiring(world);
 
     if (!m_wireDrawing)
     {
@@ -2250,8 +2297,15 @@ void SchematicCanvas::HandleWireClick(const wxPoint& world)
         m_wireCursor  = p;
 
         if (OnStatusMessage)
-            OnStatusMessage(wxString::Format(
-                L"导线起点 (%d, %d) — 再次单击放折点，右键 / Esc / 回车结束", p.x, p.y));
+            OnStatusMessage(onAttach
+                                ? wxString::Format(
+                                      L"导线起点已接到%s — 再点一下放折点，右键 / Esc 结束",
+                                      attachKind == 1 ? L"引脚"
+                                      : attachKind == 2 ? L"导线端点"
+                                                        : L"导线上")
+                                : wxString::Format(
+                                      L"导线起点 (%d, %d) — 再次单击放折点，右键 / Esc / 回车结束",
+                                      p.x, p.y));
 
         Refresh();
         return;
@@ -2263,12 +2317,8 @@ void SchematicCanvas::HandleWireClick(const wxPoint& world)
         return;
     }
 
-    // 这一下点在了真正的连接点上（引脚 / 已有导线端点）？
-    // 是的话，画完就自动收尾并切回“选择”——不用再点右键。
-    wxPoint  attachPoint;
-    int      attachKind = 0;
-    const bool landed = FindNearbyAttachPoint(p, attachPoint, &attachKind) &&
-                        attachPoint == p;
+    // 这一下点在了连接点上？是的话画完就自动收尾并切回“选择”——不用再点右键。
+    const bool landed = onAttach;
 
     // 一次单击可能产生 1~2 条线段，压一次快照（撤销时整步回退）
     PushUndo(wxString::Format(L"绘制导线到 (%d, %d)", p.x, p.y));
@@ -2299,12 +2349,14 @@ void SchematicCanvas::HandleWireClick(const wxPoint& world)
 
     Refresh();
 
-    // 接到引脚 / 导线端点上 → 这条线就算画完了
+    // 接到引脚 / 导线端点 / 导线身上 → 这条线就算画完了
     if (landed)
     {
         if (OnStatusMessage)
             OnStatusMessage(attachKind == 1 ? L"导线已接到引脚，自动回到选择工具"
-                                            : L"导线已接到导线端点，自动回到选择工具");
+                            : attachKind == 2
+                                ? L"导线已接到导线端点，自动回到选择工具"
+                                : L"导线已接到导线上（T 型连接），自动回到选择工具");
 
         FinishWire(true);
     }
@@ -2590,6 +2642,323 @@ void SchematicCanvas::FlipSelection(bool horizontal)
 {
     TransformSelection([horizontal](ComponentInstance& comp) { MirrorComponent(comp, horizontal); },
                        horizontal ? wxString(L"水平翻转") : wxString(L"垂直翻转"));
+}
+
+// ============================================================
+//  属性表编辑（任务 4）
+//
+//  属性面板只认识“键 + 字符串”，真正的校验和落盘都在这里：
+//    · 位号要非空、不重号；
+//    · 坐标吸附到网格，并让贴在引脚上的导线端点跟着走（能保持正交才跟）；
+//    · 封装非空的元件才允许改封装（电源 / 网络标签不写网表）。
+//  每次真正改动前压一份快照，撤销栈里就是“修改位号”这种可读的名字。
+// ============================================================
+bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& text,
+                                        wxString* error)
+{
+    auto Reject = [error](const wxString& message) -> bool
+    {
+        if (error)
+            *error = message;
+
+        return false;
+    };
+
+    // 去掉首尾空白（用户可能在输入框里多敲了空格）
+    wxString value = text;
+    value.Trim(true).Trim(false);
+
+    // ---------------- 元件 ----------------
+    if (key.StartsWith(L"comp."))
+    {
+        const int index = GetSelectedComponentIndex();
+
+        if (index < 0 || index >= static_cast<int>(m_components.size()))
+            return Reject(L"没有选中元件");
+
+        ComponentInstance& comp = m_components[index];
+        const wxString     field = key.Mid(5);
+
+        if (field == L"refdes")
+        {
+            if (value.IsEmpty())
+                return Reject(L"位号不能为空");
+
+            if (value.Find(L' ') != wxNOT_FOUND)
+                return Reject(L"位号里不能有空格");
+
+            if (value == comp.refdes)
+                return true;
+
+            for (size_t i = 0; i < m_components.size(); ++i)
+            {
+                if (static_cast<int>(i) != index && m_components[i].refdes == value)
+                    return Reject(wxString::Format(L"位号 %s 已经被别的元件用了", value));
+            }
+
+            PushUndo(L"修改位号");
+            comp.refdes = value;
+
+            // 让自动编号计数器跟上，免得以后新放一个元件又和这里撞号。
+            // 例：把 U1 改成 U7，之后新放的应该是 U8 而不是 U2。
+            {
+                size_t digit = value.Len();
+
+                while (digit > 0 && wxIsdigit(value[digit - 1]))
+                    --digit;
+
+                if (digit > 0 && digit < value.Len())
+                {
+                    long number = 0;
+                    value.Mid(digit).ToLong(&number);
+
+                    int& counter = m_refCount[comp.name];
+
+                    if (number > counter)
+                        counter = static_cast<int>(number);
+                }
+            }
+
+            m_netsDirty = true;      // 网表里引脚名带位号，得重算
+            Touch();
+            GetNetGraph();
+            Refresh();
+
+            if (OnStatusMessage)
+                OnStatusMessage(wxString::Format(L"位号已改为 %s", comp.refdes));
+
+            return true;
+        }
+
+        if (field == L"x" || field == L"y")
+        {
+            long number = 0;
+
+            if (!value.ToLong(&number))
+                return Reject(L"坐标必须是整数");
+
+            wxPoint target = comp.pos;
+
+            if (field == L"x")
+                target.x = static_cast<int>(number);
+            else
+                target.y = static_cast<int>(number);
+
+            target = SnapToGrid(target);
+
+            if (target == comp.pos)
+                return true;
+
+            // 先记下“当前贴在引脚上的导线端点”，元件挪完再决定它们跟不跟
+            struct Attach
+            {
+                int      wire;
+                int      end;
+                wxString pin;
+            };
+
+            std::vector<Attach> attachList;
+
+            for (size_t k = 0; k < comp.pins.size(); ++k)
+            {
+                const wxPoint pinPos = PinPosition(comp, static_cast<int>(k));
+
+                for (size_t w = 0; w < m_wires.size(); ++w)
+                {
+                    if (m_wires[w].a == pinPos)
+                        attachList.push_back({ static_cast<int>(w), 0, comp.pins[k].name });
+
+                    if (m_wires[w].b == pinPos)
+                        attachList.push_back({ static_cast<int>(w), 1, comp.pins[k].name });
+                }
+            }
+
+            PushUndo(L"移动元件");
+            comp.pos = target;
+
+            int followed = 0;
+            int kept     = 0;
+
+            for (const Attach& item : attachList)
+            {
+                int pinIndex = -1;
+
+                for (size_t k = 0; k < comp.pins.size(); ++k)
+                {
+                    if (comp.pins[k].name == item.pin)
+                    {
+                        pinIndex = static_cast<int>(k);
+                        break;
+                    }
+                }
+
+                if (pinIndex < 0)
+                    continue;
+
+                const wxPoint fresh = PinPosition(comp, pinIndex);
+                const wxPoint other = (item.end == 0) ? m_wires[item.wire].b
+                                                      : m_wires[item.wire].a;
+
+                // 只有跟着走之后仍然横平竖直才搬（原理图里不放斜线）
+                if (other.x == fresh.x || other.y == fresh.y)
+                {
+                    if (item.end == 0)
+                        m_wires[item.wire].a = fresh;
+                    else
+                        m_wires[item.wire].b = fresh;
+
+                    ++followed;
+                }
+                else
+                {
+                    ++kept;
+                }
+            }
+
+            m_netsDirty = true;
+            Touch();
+            GetNetGraph();
+            Refresh();
+
+            if (OnStatusMessage)
+            {
+                if (kept > 0)
+                    OnStatusMessage(wxString::Format(
+                        L"%s 已移到 (%d, %d)：%d 个导线端点跟随，%d 个留在原位（跟过去会变成斜线）",
+                        comp.refdes, comp.pos.x, comp.pos.y, followed, kept));
+                else
+                    OnStatusMessage(wxString::Format(L"%s 已移到 (%d, %d)",
+                                                     comp.refdes, comp.pos.x, comp.pos.y));
+            }
+
+            return true;
+        }
+
+        if (field == L"value")
+        {
+            if (value == comp.value)
+                return true;
+
+            PushUndo(L"修改元件值");
+            comp.value = value;
+            Touch();
+            GetNetGraph();
+            Refresh();
+
+            if (OnStatusMessage)
+                OnStatusMessage(wxString::Format(L"%s 的元件值改为「%s」",
+                                                 comp.refdes,
+                                                 comp.value.IsEmpty() ? comp.name : comp.value));
+
+            return true;
+        }
+
+        if (field == L"footprint")
+        {
+            // 电源 / 地 / 网络标签没有封装概念，改了也不会进 PCB 网表
+            if (comp.footprint.IsEmpty())
+                return Reject(L"该元件是非物理元件（电源 / 网络标签），不写入 PCB 网表，封装不可编辑");
+
+            if (value == comp.footprint)
+                return true;
+
+            PushUndo(L"修改封装");
+            comp.footprint = value;
+            Touch();
+            Refresh();
+
+            if (OnStatusMessage)
+                OnStatusMessage(wxString::Format(L"%s 的封装改为「%s」", comp.refdes, comp.footprint));
+
+            return true;
+        }
+
+        return Reject(wxString::Format(L"不认识的元件属性：%s", field));
+    }
+
+    // ---------------- 文本注记 ----------------
+    if (key.StartsWith(L"text."))
+    {
+        if (m_selTexts.size() != 1)
+            return Reject(L"没有选中文本");
+
+        const int index = m_selTexts.front();
+
+        if (index < 0 || index >= static_cast<int>(m_texts.size()))
+            return Reject(L"没有选中文本");
+
+        TextItem&      item  = m_texts[index];
+        const wxString field = key.Mid(5);
+
+        if (field == L"content")
+        {
+            if (value.IsEmpty())
+                return Reject(L"文本内容不能为空");
+
+            if (value == item.text)
+                return true;
+
+            PushUndo(L"修改文本");
+            item.text = value;
+        }
+        else if (field == L"x" || field == L"y")
+        {
+            long number = 0;
+
+            if (!value.ToLong(&number))
+                return Reject(L"坐标必须是整数");
+
+            wxPoint target = item.pos;
+
+            if (field == L"x")
+                target.x = static_cast<int>(number);
+            else
+                target.y = static_cast<int>(number);
+
+            target = SnapToGrid(target);
+
+            if (target == item.pos)
+                return true;
+
+            PushUndo(L"移动文本");
+            item.pos = target;
+        }
+        else if (field == L"size")
+        {
+            long number = 0;
+
+            if (!value.ToLong(&number))
+                return Reject(L"字号必须是整数");
+
+            int pointSize = static_cast<int>(number);
+
+            if (pointSize < 6)
+                pointSize = 6;
+
+            if (pointSize > 72)
+                pointSize = 72;
+
+            if (pointSize == item.pointSize)
+                return true;
+
+            PushUndo(L"修改字号");
+            item.pointSize = pointSize;
+        }
+        else
+        {
+            return Reject(wxString::Format(L"不认识的文本属性：%s", field));
+        }
+
+        Touch();
+        Refresh();
+
+        if (OnStatusMessage)
+            OnStatusMessage(L"文本注记已更新");
+
+        return true;
+    }
+
+    return Reject(wxString::Format(L"不认识的属性键：%s", key));
 }
 
 void SchematicCanvas::TransformSelection(const std::function<void(ComponentInstance&)>& apply,

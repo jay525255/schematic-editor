@@ -215,6 +215,12 @@ MainFrame::MainFrame()
         SetHint(L"导线已画完，已回到选择工具（要接着画再点一次“导线”）");
     };
 
+    // 属性表里改了一行 → 交给画布改模型；被拒绝就把界面还原
+    m_props->OnEdit = [this](const wxString& key, const wxVariant& value)
+    {
+        ApplyPropertyEdit(key, value);
+    };
+
     SyncViewState();
     UpdateProperties();
     UpdateStatusBar();
@@ -531,7 +537,9 @@ void MainFrame::CreateLayout()
                                         wxDefaultPosition,
                                         wxDefaultSize,
                                         wxSP_LIVE_UPDATE | wxSP_3DSASH);
-    m_splitRight->SetMinimumPaneSize(170);
+    // 属性表这一侧要放下“X 坐标 / 元件值 / 封装”这些两列文字，
+    // 170 会把标签截成“X 坐”，最小值放到 240 才够读。
+    m_splitRight->SetMinimumPaneSize(240);
     // gravity = 1：窗口变宽时保持右侧属性表宽度不变，多出来的都给绘图区
     m_splitRight->SetSashGravity(1.0);
 
@@ -541,13 +549,28 @@ void MainFrame::CreateLayout()
 
     const int totalWidth = GetClientSize().x;
 
-    m_splitRight->SplitVertically(m_canvas, m_props,
-                                  std::max(400, totalWidth - 300));
+    // 顺序很重要：先切外层，m_splitRight 才会拿到它真正的宽度；
+    // 反过来的话内层是按“还没被外层分配”的宽度算的，属性表会被压窄。
     m_splitOuter->SplitVertically(m_library, m_splitRight, 260);
+
+    const int rightWidth = m_splitRight->GetClientSize().x;
+    m_splitRight->SplitVertically(m_canvas, m_props,
+                                  std::max(400, rightWidth - 320));
+
+    // 兜底：万一第一轮布局后宽度还有偏差（实测某些 DPI 下会窄到 190），
+    // 等一次事件循环再按真实宽度校正。gravity = 1 保证以后拉窗口时
+    // 属性表宽度保持不变。
+    CallAfter([this]()
+    {
+        const int w = m_splitRight->GetClientSize().x;
+        if (w > 520) m_splitRight->SetSashPosition(w - 330);
+    });
 
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(m_splitOuter, 1, wxEXPAND);
     SetSizer(sizer);
+
+    (void)totalWidth;
 }
 
 // ============================================================
@@ -623,6 +646,36 @@ void MainFrame::UpdateStatusBar()
 //  选中元件 → 元件信息 + 每个引脚连到哪个网络
 //  选中导线 → 导线几何 + 所属网络 + 网络上的全部引脚
 // ------------------------------------------------------------
+//  属性表编辑
+//
+//  面板只把“改了哪一行、改成什么”报上来，真正的校验和落盘在
+//  SchematicCanvas::ApplyPropertyEdit 里。被拒绝时（位号重号、
+//  坐标不是整数……）这里只负责提示原因，然后把属性表还原。
+// ------------------------------------------------------------
+void MainFrame::ApplyPropertyEdit(const wxString& key, const wxVariant& value)
+{
+    wxString error;
+
+    if (!m_canvas->ApplyPropertyEdit(key, value.GetString(), &error))
+    {
+        if (!error.IsEmpty())
+        {
+            SetHint(wxString::Format(L"修改被拒绝：%s", error));
+            wxBell();
+        }
+    }
+    else
+    {
+        UpdateTitle();
+        UpdateStatusBar();
+    }
+
+    // 重建属性表必须放到这次事件处理之后：现在正处在某个属性条目的
+    // wxEVT_PG_CHANGED 里，马上 Clear() 会把正在编辑的那一行删掉。
+    CallAfter([this]() { UpdateProperties(); });
+}
+
+// ------------------------------------------------------------
 void MainFrame::UpdateProperties()
 {
     m_props->Begin(L"属性");
@@ -643,18 +696,27 @@ void MainFrame::UpdateProperties()
 
         m_props->AddCategory(wxString::Format(L"元件实例 · %s", comp->refdes));
         m_props->AddRow(L"元件名称", comp->name);
-        m_props->AddRow(L"位号", comp->refdes);
-        m_props->AddIntRow(L"X 坐标", comp->pos.x);
-        m_props->AddIntRow(L"Y 坐标", comp->pos.y);
+        m_props->AddEditRow(L"位号", comp->refdes, L"comp.refdes");
+        m_props->AddEditIntRow(L"X 坐标", comp->pos.x, L"comp.x");
+        m_props->AddEditIntRow(L"Y 坐标", comp->pos.y, L"comp.y");
         m_props->AddIntRow(L"引脚数", static_cast<int>(comp->pins.size()));
         m_props->AddRow(L"旋转 / 镜像", DescribeXform(comp->xform));
 
         m_props->AddCategory(L"PCB 信息");
-        m_props->AddRow(L"封装",
-                        comp->footprint.IsEmpty()
-                            ? wxString(L"（非物理元件，不写入网表）")
-                            : comp->footprint);
-        m_props->AddRow(L"元件值", comp->value.IsEmpty() ? comp->name : comp->value);
+
+        if (comp->footprint.IsEmpty())
+        {
+            // 电源 / 网络标签这类没有封装，也没有可改的余地
+            m_props->AddRow(L"封装", L"（非物理元件，不写入网表）");
+        }
+        else
+        {
+            m_props->AddEditRow(L"封装", comp->footprint, L"comp.footprint");
+        }
+
+        m_props->AddEditRow(L"元件值",
+                            comp->value.IsEmpty() ? comp->name : comp->value,
+                            L"comp.value");
 
         m_props->AddCategory(L"引脚连接");
 
@@ -741,10 +803,10 @@ void MainFrame::UpdateProperties()
     else if (const TextItem* item = m_canvas->GetSelectedText())
     {
         m_props->AddCategory(L"文本注记");
-        m_props->AddRow(L"内容", item->text);
-        m_props->AddIntRow(L"X 坐标", item->pos.x);
-        m_props->AddIntRow(L"Y 坐标", item->pos.y);
-        m_props->AddIntRow(L"字号", item->pointSize);
+        m_props->AddEditRow(L"内容", item->text, L"text.content");
+        m_props->AddEditIntRow(L"X 坐标", item->pos.x, L"text.x");
+        m_props->AddEditIntRow(L"Y 坐标", item->pos.y, L"text.y");
+        m_props->AddEditIntRow(L"字号", item->pointSize, L"text.size");
         m_props->AddRow(L"说明", L"纯图面注记，不参与电气连通性");
     }
     else if (const ComponentDef* def = m_library->GetSelected())
