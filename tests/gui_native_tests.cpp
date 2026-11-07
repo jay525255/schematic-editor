@@ -7,6 +7,9 @@
 #include <wx/log.h>
 #include <wx/timer.h>
 #include <wx/stopwatch.h>
+#include <wx/utils.h>
+#include <wx/filefn.h>
+#include <cstring>
 #include <iostream>
 #include <functional>
 #include <stdexcept>
@@ -16,9 +19,24 @@ namespace {
 se::MainFrame* frame=nullptr;wxString out;wxUIActionSimulator* input=nullptr;
 void pump(int ms=150){wxStopWatch clock;while(clock.Time()<ms){wxYield();wxTheApp->ProcessPendingEvents();wxMilliSleep(10);}}
 bool screenshot(const wxString& name){
+#ifdef __WXGTK__
+    if(!frame)return false;
+    frame->Update();pump(100);
+    // A fresh X11 capture avoids wxScreenDC returning its first cached image.
+    const auto path=(out+"/"+name).utf8_string();
+    const char* const args[]={"scrot","--overwrite","--focused",path.c_str(),nullptr};
+    return wxExecute(args,wxEXEC_SYNC|wxEXEC_NOEVENTS)==0&&wxFileExists(wxString::FromUTF8(path.c_str()));
+#else
     if(!frame)return false;auto r=frame->GetScreenRect();wxScreenDC screen;wxBitmap bitmap(r.width,r.height);
     wxMemoryDC memory(bitmap);bool ok=memory.Blit(0,0,r.width,r.height,&screen,r.x,r.y);memory.SelectObject(wxNullBitmap);
     return ok&&bitmap.ConvertToImage().SaveFile(out+"/"+name,wxBITMAP_TYPE_PNG);
+#endif
+}
+bool differentScreenshots(const wxString& first,const wxString& second){
+    wxImage a(out+"/"+first,wxBITMAP_TYPE_PNG),b(out+"/"+second,wxBITMAP_TYPE_PNG);
+    if(!a.IsOk()||!b.IsOk())return false;
+    if(a.GetWidth()!=b.GetWidth()||a.GetHeight()!=b.GetHeight())return true;
+    return std::memcmp(a.GetData(),b.GetData(),static_cast<size_t>(a.GetWidth())*a.GetHeight()*3)!=0;
 }
 void check(bool ok,const char* message){if(!ok){screenshot("failure.png");throw std::runtime_error(message);}std::cout<<"PASS "<<message<<std::endl;}
 void key(int code,int modifiers=wxMOD_NONE){check(input->Char(code,modifiers),"native keyboard delivered");pump();}
@@ -89,6 +107,7 @@ int main(int argc,char**argv){
         check(canvas->GetSimulator().NetValue(outputNet)==se::LogicValue::L,"output waits for propagation event");
         key(WXK_F6);check(canvas->GetSimulator().NetValue(outputNet)==se::LogicValue::H,"native step propagates high through AND");
         check(screenshot("dynamic-simulation.png"),"save actual dynamic signal screenshot");
+        check(differentScreenshots("editing.png","dynamic-simulation.png"),"different circuit stages have fresh distinct screenshots");
         key(WXK_F5);pump(250);key(WXK_F5);check(canvas->GetSimulator().RuntimeTime()>paused+2,"native Resume continues existing timeline");
         key(WXK_F5,wxMOD_SHIFT);check(!canvas->GetSimulator().RuntimeReady(),"native Reset clears pending events");
         canvas->MarkSaved();frame->Destroy();pump();frame=nullptr;wxTheApp->OnExit();wxEntryCleanup();return 0;
