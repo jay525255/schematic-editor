@@ -391,6 +391,9 @@ private:
         bool    partnerVertical = false; // 那条导线原本是不是竖的（决定拐角往哪个方向让）
     };
 
+    std::vector<ComponentInstance> m_dragBaseComponents;
+    std::vector<Wire> m_dragBaseWires;
+
     bool                 m_dragging   = false;
     bool                 m_dragMoved  = false;
     wxPoint              m_dragStartWorld;

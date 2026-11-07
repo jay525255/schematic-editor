@@ -132,6 +132,9 @@
     <ClCompile Include="src\ComponentCatalog.cpp" />
     <ClCompile Include="src\ComponentEditorDialog.cpp" />
     <ClCompile Include="src\NetModel.cpp" />
+    <ClCompile Include="src\CircuitTools.cpp" />
+    <ClCompile Include="src\EditingTools.cpp" />
+    <ClCompile Include="src\KiCadExport.cpp" />
     <ClCompile Include="src\SchematicIO.cpp" />
     <ClCompile Include="src\SimModel.cpp" />
     <ClCompile Include="src\SymbolPainter.cpp" />
@@ -142,6 +145,9 @@
     <ClInclude Include="src\ComponentCatalog.h" />
     <ClInclude Include="src\ComponentEditorDialog.h" />
     <ClInclude Include="src\NetModel.h" />
+    <ClInclude Include="src\CircuitTools.h" />
+    <ClInclude Include="src\EditingTools.h" />
+    <ClInclude Include="src\KiCadExport.h" />
     <ClInclude Include="src\SchematicIO.h" />
     <ClInclude Include="src\SimModel.h" />
     <ClInclude Include="src\SymbolPainter.h" />

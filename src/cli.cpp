@@ -1,5 +1,6 @@
 #include "SchematicIO.h"
 #include "SimModel.h"
+#include "KiCadExport.h"
 #include "BuildVersion.h"
 #include <clocale>
 #include <iostream>
@@ -9,13 +10,21 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--version") {
         std::cout << "SchematicEditor source " << SE_SOURCE_REV << '\n'; return 0;
     }
-    if (argc != 4 || std::string(argv[1]) != "export-protel") {
+    if (argc != 4 || (std::string(argv[1]) != "export-protel" && std::string(argv[1]) != "export-kicad")) {
         std::cerr << "Usage: schematic-cli --version | export-protel design.ses output.net\n"; return 2;
     }
     se::SchematicDocument doc; wxString error;
-    if (!se::SchematicIO::Load(wxString::FromUTF8(argv[2]), doc, &error) ||
-        !se::SchematicIO::WriteTextFile(wxString::FromUTF8(argv[3]),
-            se::NetBuilder::ToProtel(doc.components, se::NetBuilder::Build(doc.components, doc.wires)), &error)) {
+    if (!se::SchematicIO::Load(wxString::FromUTF8(argv[2]), doc, &error)) {
+        std::cerr << error.utf8_string() << '\n'; return 1;
+    }
+    wxString text;
+    auto graph = se::NetBuilder::Build(doc.components, doc.wires);
+    if (std::string(argv[1]) == "export-kicad") {
+        if (!se::BuildKiCadNetlist(doc.components, graph, text, error)) {
+            std::cerr << error.utf8_string() << '\n'; return 1;
+        }
+    } else text = se::NetBuilder::ToProtel(doc.components, graph);
+    if (!se::SchematicIO::WriteTextFile(wxString::FromUTF8(argv[3]), text, &error)) {
         std::cerr << error.utf8_string() << '\n'; return 1;
     }
     return 0;

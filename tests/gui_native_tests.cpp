@@ -46,6 +46,7 @@ int main(int argc,char**argv){
         wxTreeItemIdValue catCookie,leafCookie;auto cat=tree->GetFirstChild(tree->GetRootItem(),catCookie);auto leaf=tree->GetFirstChild(cat,leafCookie);
         auto selectGate=[&]{wxRect r;tree->EnsureVisible(leaf);pump();check(tree->GetBoundingRect(leaf,r,true),"gate row visible");click(tree,r.GetPosition()+wxPoint(10,r.height/2));check(canvas->GetPendingComponent()!=nullptr,"native selection activates placement");};
         selectGate();click(canvas,canvas->ScreenPoint({-120,-80}));selectGate();click(canvas,canvas->ScreenPoint({100,80}));check(canvas->GetComponentCount()==2,"mouse places two gate instances");
+        check(canvas->GetComponents()[0].refdes!=canvas->GetComponents()[1].refdes,"placed component references are unique");
         auto original=canvas->GetComponents()[0].pos;auto from=se::PinPosition(canvas->GetComponents()[0],2),to=se::PinPosition(canvas->GetComponents()[1],0);
         key('W');check(canvas->GetTool()==se::SchematicCanvas::ToolWire,"W activates wiring");click(canvas,canvas->ScreenPoint(from));click(canvas,canvas->ScreenPoint(to));
         auto connected=[&]{const auto& g=canvas->GetNetGraph();return g.pinNet[0][2]==g.pinNet[1][0];};check(canvas->GetWireCount()>0&&connected(),"native wire connects gate terminals");
@@ -60,7 +61,8 @@ int main(int argc,char**argv){
         auto saved=wxFileName(out,"native-roundtrip.ses").GetFullPath();fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'S',saved);
         check(wxFileExists(saved)&&!canvas->IsModified(),"native save-as writes design");key('N',wxMOD_CONTROL);check(canvas->GetComponentCount()==0,"native new clears saved design");
         fileCommand(wxMOD_CONTROL,'O',saved);check(canvas->GetComponentCount()==2&&connected(),"native open restores saved circuit");
-        key('A',wxMOD_CONTROL);key(WXK_DELETE);check(canvas->GetComponentCount()==0,"native Delete removes selected objects");key('Z',wxMOD_CONTROL);check(canvas->GetComponentCount()==2,"native undo restores deletion");
+        canvas->StartSimulation();
+        key('A',wxMOD_CONTROL);key(WXK_DELETE);check(canvas->GetComponentCount()==0,"native Delete removes selected objects");check(!canvas->IsSimulating(),"topology edit invalidates runtime state");key('Z',wxMOD_CONTROL);check(canvas->GetComponentCount()==2,"native undo restores deletion");
         check(screenshot("roundtrip.png"),"save real roundtrip screenshot");
         canvas->MarkSaved();frame->Destroy();pump();frame=nullptr;wxTheApp->OnExit();wxEntryCleanup();return 0;
     }catch(const std::exception& e){screenshot("failure.png");std::cerr<<"FAIL "<<e.what()<<std::endl;return 1;}

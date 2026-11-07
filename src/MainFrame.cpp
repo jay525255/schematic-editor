@@ -13,6 +13,7 @@
 #include "ComponentEditorDialog.h"
 #include "Ids.h"
 #include "SchematicIO.h"
+#include "KiCadExport.h"
 #include "TextReportDialog.h"
 
 namespace se
@@ -719,7 +720,7 @@ void MainFrame::UpdateProperties()
 
         m_props->AddCategory(L"PCB 信息");
 
-        if (comp->footprint.IsEmpty())
+        if (!IsPcbComponent(*comp))
         {
             // 电源 / 网络标签这类没有封装，也没有可改的余地
             m_props->AddRow(L"封装", L"（非物理元件，不写入网表）");
@@ -1066,7 +1067,8 @@ bool MainFrame::DoExportNetlist()
                         L"导出网络表",
                         wxEmptyString,
                         defaultName,
-                        L"标准网表 - Protel/Altium 格式 (*.net)|*.net|"
+                        L"KiCad 原生标准网表 (*.net)|*.net|"
+                        L"Protel/Altium 网表 (*.net)|*.net|"
                         L"可读报告 - 网络清单+元件清单 (*.txt)|*.txt|"
                         L"所有文件 (*.*)|*.*",
                         wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
@@ -1074,13 +1076,14 @@ bool MainFrame::DoExportNetlist()
     if (dialog.ShowModal() != wxID_OK)
         return false;
 
-    // 按用户选的过滤器决定格式：0 = Protel 标准网表，1 = 可读报告
-    const bool protel = (dialog.GetFilterIndex() == 0);
-
-    const wxString content = protel ? m_canvas->BuildNetlistProtel()
-                                    : m_canvas->BuildNetlist();
-
-    wxString error;
+    const int format = dialog.GetFilterIndex();
+    wxString content, error;
+    if (format == 0) {
+        if (!BuildKiCadNetlist(m_canvas->GetComponents(), m_canvas->GetNetGraph(), content, error)) {
+            wxMessageBox(error, L"无法导出 KiCad 网表", wxOK | wxICON_ERROR, this);
+            return false;
+        }
+    } else content = format == 1 ? m_canvas->BuildNetlistProtel() : m_canvas->BuildNetlist();
 
     if (!SchematicIO::WriteTextFile(dialog.GetPath(), content, &error))
     {
@@ -1091,12 +1094,11 @@ bool MainFrame::DoExportNetlist()
 
     SetHint(wxString::Format(L"网络表已导出到 %s（%s）",
                              dialog.GetPath(),
-                             protel ? L"Protel 标准格式" : L"可读报告"));
+                             format == 0 ? L"KiCad 原生格式" : format == 1 ? L"Protel 格式" : L"可读报告"));
 
     wxMessageBox(wxString::Format(L"网络表已导出：\n%s\n\n格式：%s",
                                   dialog.GetPath(),
-                                  protel ? L"Protel/Altium 标准网表（可被 PCB 软件加载）"
-                                         : L"可读报告（含网络清单与元件清单）"),
+                                  format == 0 ? L"KiCad 原生网表" : format == 1 ? L"Protel 网表" : L"可读诊断报告"),
                  L"导出成功", wxOK | wxICON_INFORMATION, this);
 
     return true;

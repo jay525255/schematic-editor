@@ -402,6 +402,12 @@ void ComponentEditorDialog::OnSave(wxCommandEvent&)
     {
         for (const ComponentDef& def : category.items)
         {
+            wxString validationError;
+            if (!ComponentCatalog::ValidateDefinition(def, &validationError)) {
+                wxMessageBox(def.name + L"：" + validationError, L"元件定义无效", wxOK | wxICON_WARNING, this);
+                return;
+            }
+
             if (def.name.IsEmpty())
             {
                 wxMessageBox(L"有元件的名称为空，请先补上名称。",

@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: cloud-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 defaults:
   run:
@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
       - name: Prepare evidence directory
         run: New-Item -ItemType Directory -Force ci-artifacts | Out-Null
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         id: wx-cache
         with:
           path: .deps/wxWidgets-3.2.12
@@ -55,6 +55,12 @@ jobs:
         run: |
           cmd /c tools\install_wx_windows.cmd 2>&1 | Tee-Object ci-artifacts/wx-build.log
           if ($LASTEXITCODE -ne 0) { throw "wxWidgets build failed: $LASTEXITCODE" }
+      - name: Save successfully built wxWidgets dependency independently of test results
+        if: steps.wx-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .deps/wxWidgets-3.2.12
+          key: windows2022-wx3.2.12-static-x64-v143-release-v1
       - name: Build original Visual Studio solution
         id: solution
         run: |

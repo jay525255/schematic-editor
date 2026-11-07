@@ -1,4 +1,7 @@
 #include "SchematicCanvas.h"
+#include "CircuitTools.h"
+#include "EditingTools.h"
+#include "KiCadExport.h"
 
 #include <wx/dcbuffer.h>
 #include <wx/graphics.h>
@@ -1756,6 +1759,12 @@ void SchematicCanvas::OnLeaveWindow(wxMouseEvent& event)
 
 void SchematicCanvas::OnKeyDown(wxKeyEvent& event)
 {
+    if (!event.HasAnyModifiers() && event.GetKeyCode() == 'W') {
+        wxCommandEvent command(wxEVT_MENU, ID_PLACE_WIRE);
+        wxPostEvent(wxGetTopLevelParent(this), command);
+        return;
+    }
+
     switch (event.GetKeyCode())
     {
         case WXK_DELETE:
@@ -1834,6 +1843,7 @@ void SchematicCanvas::OnKeyDown(wxKeyEvent& event)
 
 void SchematicCanvas::PushUndo(const wxString& label)
 {
+    StopSimulation();
     Snapshot snapshot;
     snapshot.components    = m_components;
     snapshot.wires         = m_wires;
@@ -1855,6 +1865,7 @@ void SchematicCanvas::PushUndo(const wxString& label)
 
 void SchematicCanvas::ApplySnapshot(const Snapshot& snapshot)
 {
+    StopSimulation();
     m_components    = snapshot.components;
     m_wires         = snapshot.wires;
     m_texts         = snapshot.texts;
@@ -2006,7 +2017,7 @@ void SchematicCanvas::PlaceComponent(const wxPoint& world)
     if (m_pending->refPrefix.StartsWith(L"#"))
         comp.refdes = comp.name;                       // 电源符号不编号
     else
-        comp.refdes = wxString::Format(L"%s%d", m_pending->refPrefix, counter);
+        comp.refdes = NextReference(m_components, m_pending->refPrefix);
 
     PushUndo(wxString::Format(L"放置 %s", comp.refdes));
 
@@ -2040,238 +2051,43 @@ void SchematicCanvas::PlaceComponent(const wxPoint& world)
 // ------------------------------------------------------------
 void SchematicCanvas::BeginDrag(const wxPoint& world)
 {
-    if (m_selComponents.empty())
-        return;
-
-    m_dragging       = true;
-    m_dragMoved      = false;
+    if (m_selComponents.empty()) return;
+    StopSimulation();
+    m_dragging = true;
+    m_dragMoved = false;
     m_dragStartWorld = world;
-    m_dragOriginalPos.clear();
-    m_dragWireEnds.clear();
-    m_dragSplitWires.clear();
-
-    for (int index : m_selComponents)
-        m_dragOriginalPos.push_back(m_components[index].pos);
-
-    // 这个点在不在“被拖的那几个元件的引脚”上
-    const auto isMovingPin = [this](const wxPoint& p) -> bool
-    {
-        for (int compIndex : m_selComponents)
-        {
-            const ComponentInstance& comp = m_components[compIndex];
-
-            for (size_t k = 0; k < comp.pins.size(); ++k)
-            {
-                if (PinPosition(comp, static_cast<int>(k)) == p)
-                    return true;
-            }
-        }
-
-        return false;
-    };
-
-    // 找出“端点接在被选中元件引脚上”的导线，这些端点要跟着一起走
-    for (size_t w = 0; w < m_wires.size(); ++w)
-    {
-        for (int end = 0; end < 2; ++end)
-        {
-            const wxPoint point = (end == 0) ? m_wires[w].a : m_wires[w].b;
-            const wxPoint other = (end == 0) ? m_wires[w].b : m_wires[w].a;
-
-            if (!isMovingPin(point))
-                continue;
-
-            // 另一端也在被拖的引脚上 → 整条一起平移，角度天然不变
-            if (isMovingPin(other))
-                continue;
-
-            DragWireEnd item;
-            item.wireIndex       = static_cast<int>(w);
-            item.end             = end;
-            item.original        = point;
-            item.fixedOther      = other;
-            item.horizontalFirst = (m_wires[w].a.y == m_wires[w].b.y);
-
-            // 拐角上有没有接着的另一条导线？
-            for (size_t w2 = 0; w2 < m_wires.size(); ++w2)
-            {
-                if (w2 == w)
-                    continue;
-
-                if (m_wires[w2].a == other)
-                {
-                    item.partnerIndex    = static_cast<int>(w2);
-                    item.partnerEnd      = 0;
-                    item.partnerFar      = m_wires[w2].b;
-                    item.partnerVertical = (m_wires[w2].a.x == m_wires[w2].b.x);
-                    break;
-                }
-
-                if (m_wires[w2].b == other)
-                {
-                    item.partnerIndex    = static_cast<int>(w2);
-                    item.partnerEnd      = 1;
-                    item.partnerFar      = m_wires[w2].a;
-                    item.partnerVertical = (m_wires[w2].a.x == m_wires[w2].b.x);
-                    break;
-                }
-            }
-
-            m_dragWireEnds.push_back(item);
-        }
-    }
-
+    m_dragBaseComponents = m_components;
+    m_dragBaseWires = m_wires;
     SetCursor(wxCursor(wxCURSOR_SIZING));
 }
 
 void SchematicCanvas::UpdateDrag(const wxPoint& world)
 {
-    if (!m_dragging || m_dragOriginalPos.size() != m_selComponents.size())
-        return;
-
-    // 位移量对齐到网格 → 移动后引脚仍然对齐（引脚本身也是 10 的倍数）
-    const wxPoint delta = SnapToGrid(wxPoint(world.x - m_dragStartWorld.x,
-                                             world.y - m_dragStartWorld.y));
-
-    if (delta.x == 0 && delta.y == 0 && !m_dragMoved)
-        return;
-
-    if (!m_dragMoved)
-    {
-        // 第一次真正移动前才压快照 —— 单纯的点击选中不该产生一步撤销
-        PushUndo(m_selComponents.size() == 1
-                     ? wxString::Format(L"移动 %s", m_components[m_selComponents.front()].refdes)
-                     : wxString::Format(L"移动 %d 个元件", static_cast<int>(m_selComponents.size())));
-
-        m_dragMoved = true;
-
-        // 有些导线的另一端孤零零的（直接连到固定引脚上），
-        // 这种线一拖就会变斜。先在那儿补一个“拐角”，
-        // 之后拐角就能跟着引脚走，两条线段都保持正交。
-        for (DragWireEnd& item : m_dragWireEnds)
-        {
-            if (item.partnerIndex >= 0)
-                continue;
-
-            Wire dummy;
-            dummy.id = ++m_nextWireId;
-            dummy.a  = item.fixedOther;
-            dummy.b  = item.fixedOther;
-
-            item.partnerIndex = static_cast<int>(m_wires.size());
-            item.partnerEnd   = 1;
-            item.partnerFar   = item.fixedOther;
-
-            // 接引脚的那条原来是横的 → 新加的这条就是竖的
-            item.partnerVertical = !item.horizontalFirst;
-
-            m_wires.push_back(dummy);
-            m_dragSplitWires.push_back(item.partnerIndex);
-        }
-    }
-
-    for (size_t k = 0; k < m_selComponents.size(); ++k)
-    {
-        m_components[m_selComponents[k]].pos =
-            wxPoint(m_dragOriginalPos[k].x + delta.x, m_dragOriginalPos[k].y + delta.y);
-    }
-
-    // 接在引脚上的导线端点跟随（橡皮筋连线），并且拐角也一起动，
-    // 保证每条线段都还是横平竖直的 —— 不会拖出斜线。
-    for (const DragWireEnd& item : m_dragWireEnds)
-    {
-        const wxPoint newPin(item.original.x + delta.x, item.original.y + delta.y);
-        const int     otherEnd = 1 - item.end;
-
-        // 拐角让哪条轴跟着 pin 走，取决于另一半导线原本的走向：
-        //   另一半是竖的 → 拐角 x 钉在 F.x 上，y 跟着 pin
-        //   另一半是横的 → 拐角 y 钉在 F.y 上，x 跟着 pin
-        const wxPoint corner = item.partnerVertical
-                                   ? wxPoint(item.partnerFar.x, newPin.y)
-                                   : wxPoint(newPin.x, item.partnerFar.y);
-
-        if (item.end == 0)
-            m_wires[item.wireIndex].a = newPin;
-        else
-            m_wires[item.wireIndex].b = newPin;
-
-        if (otherEnd == 0)
-            m_wires[item.wireIndex].a = corner;
-        else
-            m_wires[item.wireIndex].b = corner;
-
-        if (item.partnerIndex >= 0 && item.partnerIndex < static_cast<int>(m_wires.size()))
-        {
-            if (item.partnerEnd == 0)
-                m_wires[item.partnerIndex].a = corner;
-            else
-                m_wires[item.partnerIndex].b = corner;
-        }
-    }
-
+    if (!m_dragging) return;
+    const wxPoint delta = SnapToGrid(world - m_dragStartWorld);
+    if (delta == wxPoint(0, 0) && !m_dragMoved) return;
+    if (!m_dragMoved) { PushUndo(L"移动元件及连接线"); m_dragMoved = true; }
+    m_components = m_dragBaseComponents;
+    m_wires = m_dragBaseWires;
+    MoveConnectedComponents(m_components, m_wires, m_selComponents, delta);
+    for (const auto& wire : m_wires) m_nextWireId = std::max(m_nextWireId, wire.id);
+    m_selWires.clear();
     m_netsDirty = true;
-    GetNetGraph();
-
     m_cursorWorld = world;
-
-    if (OnCursorMoved)
-        OnCursorMoved(m_cursorWorld);
-
+    GetNetGraph();
+    if (OnCursorMoved) OnCursorMoved(world);
     Refresh();
 }
 
 void SchematicCanvas::EndDrag()
 {
-    if (!m_dragging)
-        return;
-
+    if (!m_dragging) return;
     m_dragging = false;
     SetCursor(wxCursor(wxCURSOR_CROSS));
-
-    if (m_dragMoved)
-    {
-        // 收尾：拖动时补出来的线段有可能长度是 0（比如只横向拖），
-        // 留着会让“导线数量”多一条、还会在网表里多出个孤立点，所以清掉。
-        if (!m_dragSplitWires.empty())
-        {
-            std::vector<Wire> kept;
-
-            for (const Wire& w : m_wires)
-            {
-                if (w.a != w.b)
-                    kept.push_back(w);
-            }
-
-            if (kept.size() != m_wires.size())
-            {
-                m_wires.swap(kept);
-                m_selWires.clear();     // 下标已经变了，直接放弃导线选择
-                m_netsDirty = true;
-            }
-
-            m_dragSplitWires.clear();
-        }
-
-        Touch();
-
-        if (OnStatusMessage)
-            OnStatusMessage(m_selComponents.size() == 1
-                                ? wxString::Format(L"已移动 %s 到 (%d, %d)（%d 个导线端点跟随，拐角保持直角）",
-                                                   m_components[m_selComponents.front()].refdes,
-                                                   m_components[m_selComponents.front()].pos.x,
-                                                   m_components[m_selComponents.front()].pos.y,
-                                                   static_cast<int>(m_dragWireEnds.size()))
-                                : wxString::Format(L"已移动 %d 个元件（%d 个导线端点跟随，拐角保持直角）",
-                                                   static_cast<int>(m_selComponents.size()),
-                                                   static_cast<int>(m_dragWireEnds.size())));
-
-        NotifySelectionChanged();
-    }
-
+    if (m_dragMoved) { Touch(); NotifySelectionChanged(); }
     m_dragMoved = false;
-    m_dragOriginalPos.clear();
-    m_dragWireEnds.clear();
-    m_dragSplitWires.clear();
+    m_dragBaseComponents.clear();
+    m_dragBaseWires.clear();
     Refresh();
 }
 
@@ -2557,9 +2373,7 @@ wxString SchematicCanvas::NextRefdes(const wxString& protoRefdes, const wxString
     if (prefix.IsEmpty() || prefix.StartsWith(L"#"))
         return protoRefdes;
 
-    const int counter = ++m_refCount[compName];
-
-    return wxString::Format(L"%s%d", prefix, counter);
+    return NextReference(m_components, prefix);
 }
 
 void SchematicCanvas::CopySelection()
@@ -2857,87 +2671,16 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
             if (target == comp.pos)
                 return true;
 
-            // 先记下“当前贴在引脚上的导线端点”，元件挪完再决定它们跟不跟
-            struct Attach
-            {
-                int      wire;
-                int      end;
-                wxString pin;
-            };
-
-            std::vector<Attach> attachList;
-
-            for (size_t k = 0; k < comp.pins.size(); ++k)
-            {
-                const wxPoint pinPos = PinPosition(comp, static_cast<int>(k));
-
-                for (size_t w = 0; w < m_wires.size(); ++w)
-                {
-                    if (m_wires[w].a == pinPos)
-                        attachList.push_back({ static_cast<int>(w), 0, comp.pins[k].name });
-
-                    if (m_wires[w].b == pinPos)
-                        attachList.push_back({ static_cast<int>(w), 1, comp.pins[k].name });
-                }
-            }
-
+            const wxPoint delta = target - comp.pos;
             PushUndo(L"移动元件");
-            comp.pos = target;
-
-            int followed = 0;
-            int kept     = 0;
-
-            for (const Attach& item : attachList)
-            {
-                int pinIndex = -1;
-
-                for (size_t k = 0; k < comp.pins.size(); ++k)
-                {
-                    if (comp.pins[k].name == item.pin)
-                    {
-                        pinIndex = static_cast<int>(k);
-                        break;
-                    }
-                }
-
-                if (pinIndex < 0)
-                    continue;
-
-                const wxPoint fresh = PinPosition(comp, pinIndex);
-                const wxPoint other = (item.end == 0) ? m_wires[item.wire].b
-                                                      : m_wires[item.wire].a;
-
-                // 只有跟着走之后仍然横平竖直才搬（原理图里不放斜线）
-                if (other.x == fresh.x || other.y == fresh.y)
-                {
-                    if (item.end == 0)
-                        m_wires[item.wire].a = fresh;
-                    else
-                        m_wires[item.wire].b = fresh;
-
-                    ++followed;
-                }
-                else
-                {
-                    ++kept;
-                }
-            }
-
+            MoveConnectedComponents(m_components, m_wires, { index }, delta);
+            for (const auto& wire : m_wires) m_nextWireId = std::max(m_nextWireId, wire.id);
+            m_selWires.clear();
             m_netsDirty = true;
             Touch();
             GetNetGraph();
             Refresh();
-
-            if (OnStatusMessage)
-            {
-                if (kept > 0)
-                    OnStatusMessage(wxString::Format(
-                        L"%s 已移到 (%d, %d)：%d 个导线端点跟随，%d 个留在原位（跟过去会变成斜线）",
-                        comp.refdes, comp.pos.x, comp.pos.y, followed, kept));
-                else
-                    OnStatusMessage(wxString::Format(L"%s 已移到 (%d, %d)",
-                                                     comp.refdes, comp.pos.x, comp.pos.y));
-            }
+            if (OnStatusMessage) OnStatusMessage(L"元件坐标与连接线已一起更新");
 
             return true;
         }
@@ -2964,7 +2707,7 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
         if (field == L"footprint")
         {
             // 电源 / 地 / 网络标签没有封装概念，改了也不会进 PCB 网表
-            if (comp.footprint.IsEmpty())
+            if (!IsPcbComponent(comp))
                 return Reject(L"该元件是非物理元件（电源 / 网络标签），不写入 PCB 网表，封装不可编辑");
 
             if (value == comp.footprint)

@@ -10,6 +10,12 @@ cleanup() {
   kill "$wm_pid" 2>/dev/null || true
 }
 trap cleanup EXIT
+set +e
 ctest --test-dir build-ci -L gui -V --output-junit "$PWD/ci-artifacts/gui/junit.xml" 2>&1 | tee ci-artifacts/gui/tests.log
+test_status=${PIPESTATUS[0]}
 python3 tools/assert_junit.py ci-artifacts/gui/junit.xml gui_native
+junit_status=$?
 python3 tests/app_startup.py build-ci/SchematicEditor ci-artifacts/gui/executable
+
+startup_status=$?
+if ((test_status || junit_status || startup_status)); then exit 1; fi

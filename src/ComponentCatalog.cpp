@@ -4,6 +4,7 @@
 #include <wx/filename.h>
 #include <wx/stdpaths.h>
 #include <wx/xml/xml.h>
+#include <set>
 
 namespace se
 {
@@ -153,6 +154,7 @@ bool ParseLibraryFile(const wxString& path, std::vector<CategoryDef>& out, wxStr
             if (def.h < 20)
                 def.h = 20;
 
+            if (!ComponentCatalog::ValidateDefinition(def, error)) return false;
             category.items.push_back(def);
         }
 
@@ -341,6 +343,10 @@ bool ComponentCatalog::EnsureUserLibrary(wxString* error)
 bool ComponentCatalog::SaveUserLibrary(const std::vector<CategoryDef>& categories,
                                        wxString* error)
 {
+    for (const auto& category : categories)
+        for (const auto& def : category.items)
+            if (!ValidateDefinition(def, error)) return false;
+
     const wxString path = GetLibraryPath();
 
     // 默认就按 UTF-8 写（<?xml version="1.0" encoding="UTF-8"?>），中文不会乱码
@@ -416,7 +422,7 @@ bool ComponentCatalog::Reload(wxString* error)
         {
             // 解析失败：保留上一次的数据，只把错误抛给调用方
             SetError(error, parseError);
-            RebuildMerged();
+            // Keep both the old definitions and their UI pointers unchanged.
             g_inited = true;
             return false;
         }
@@ -491,6 +497,26 @@ void ComponentCatalog::RebuildMerged()
 // ============================================================
 //  对外查询
 // ============================================================
+
+bool ComponentCatalog::ValidateDefinition(const ComponentDef& def, wxString* error)
+{
+    auto reject = [&](const wxString& message) { SetError(error, message); return false; };
+    if (def.name.IsEmpty() || def.refPrefix.IsEmpty() || def.inputs < 0 || def.outputs < 0 ||
+        def.inputs > 32 || def.outputs > 32 || def.w < 24 || def.h < 20 || def.w > 1000 || def.h > 1000)
+        return reject(L"元件名称、前缀、脚数或尺寸不合法");
+    ComponentInstance probe;
+    probe.name = def.name; probe.w = def.w; probe.h = def.h;
+    probe.pins = MakePins(def.name, def.kind, def.inputs, def.outputs);
+    if (probe.pins.empty()) return reject(L"元件至少需要一个引脚");
+    std::set<std::pair<int, int>> positions;
+    for (size_t k = 0; k < probe.pins.size(); ++k) {
+        auto at = PinPosition(probe, static_cast<int>(k));
+        if (!positions.insert({at.x, at.y}).second)
+            return reject(L"引脚位置重叠：请增大元件尺寸或减少引脚数");
+    }
+    if (error) error->clear();
+    return true;
+}
 
 const std::vector<CategoryDef>& ComponentCatalog::Categories()
 {

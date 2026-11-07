@@ -61,6 +61,8 @@ struct CategoryDef
 class ComponentCatalog
 {
 public:
+    static bool ValidateDefinition(const ComponentDef& def, wxString* error = nullptr);
+
     // 内置 + 用户自定义合并后的分类表（静态缓存）
     static const std::vector<CategoryDef>& Categories();
 

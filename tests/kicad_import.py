@@ -82,7 +82,7 @@ try:
         if not (footprint_dir/f'PinHeader_1x{pin_count:02d}_P2.54mm_Vertical.kicad_mod').is_file():
             raise RuntimeError('Required real KiCad footprint library is missing')
     netlist=out/'export.net';board_path=out/'imported.kicad_pcb'
-    subprocess.run([str(args.cli.resolve()),'export-protel',str(args.design.resolve()),str(netlist)],check=True,timeout=20)
+    subprocess.run([str(args.cli.resolve()),'export-kicad',str(args.design.resolve()),str(netlist)],check=True,timeout=20)
     # KiCad itself makes a blank board, before the editor imports the .net file.
     if not pcbnew.SaveBoard(str(board_path),pcbnew.BOARD()):raise RuntimeError('Cannot create empty KiCad board')
     with tempfile.TemporaryDirectory(prefix='schematic-kicad-config-') as config:
