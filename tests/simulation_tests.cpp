@@ -22,6 +22,7 @@ int main(int argc,char** argv){try{
             if(outputs==2)require(timedTruth.Value(inputs+1)==(sum>=2?1:0),"event-driven adder carry");
         }
     }
+    require(se::LogicValueText(-1)=="X"&&se::LogicValueText(0)=="0"&&se::LogicValueText(1)=="1"&&se::LogicValueText(2)=="ERR","portable logic-state display includes explicit conflicts");
     // Independent timed chain: input -> inverter (2 ticks) -> inverter (3 ticks).
     auto source=component(L"输入引脚",11);source.value="0";
     auto first=component(L"非门",22),second=component(L"非门",33);

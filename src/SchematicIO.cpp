@@ -395,7 +395,7 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
                 comp.delayTicks = GetIntAttr(node, "delayTicks", 1);
                 comp.clockPeriodTicks = GetIntAttr(node, "clockPeriodTicks", 10);
 
-                if (comp.footprint.IsEmpty() && comp.value.IsEmpty())
+                if (!node->HasAttribute("footprint") && !node->HasAttribute("value"))
                 {
                     if (const ComponentDef* def = ComponentCatalog::Find(comp.name))
                     {

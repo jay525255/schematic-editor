@@ -61,6 +61,8 @@ int main(int argc,char**argv){
         auto oldTransform=canvas->GetComponents()[0].xform;
         key('R',wxMOD_CONTROL);check(canvas->GetComponents()[0].xform!=oldTransform&&connected(),"native rotation preserves attached wire network");
         key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[0].xform==oldTransform&&connected(),"undo restores rotation and wiring together");
+        // Undo deliberately clears selection; select again with a real click.
+        click(canvas,canvas->ScreenPoint(original+wxPoint(30,20)));
         key('H',wxMOD_CONTROL);check(canvas->GetComponents()[0].xform!=oldTransform&&connected(),"native flip preserves attached wire network");key('Z',wxMOD_CONTROL);
         check(screenshot("editing.png"),"save actual editing screenshot");
         key('A',wxMOD_CONTROL);key('C',wxMOD_CONTROL);key('V',wxMOD_CONTROL);check(canvas->GetComponentCount()==4,"native copy paste adds independent instances");key('Z',wxMOD_CONTROL);

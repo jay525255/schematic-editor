@@ -34,6 +34,9 @@ int main(int argc,char** argv) { try {
     const auto future=wxFileName(wxString::FromUTF8(argv[2]),"future.ses").GetFullPath();
     require(se::SchematicIO::WriteTextFile(future,"<schematic version=\"99.0\"/>",&error),"prepare unsupported future design");
     require(!se::SchematicIO::Load(future,reopened,&error)&&reopened.components.size()==1,"unsupported version cannot replace current document");
+    auto blank=d;blank.components[0].value.clear();blank.components[0].footprint.clear();
+    const auto blankPath=wxFileName(wxString::FromUTF8(argv[2]),"blank-parameters.ses").GetFullPath();
+    require(se::SchematicIO::Save(blankPath,blank,&error)&&se::SchematicIO::Load(blankPath,reopened,&error)&&reopened.components[0].value.empty()&&reopened.components[0].footprint.empty(),"explicitly empty parameters survive roundtrip without library substitution");
     auto invalid=d;invalid.components.push_back(invalid.components[0]);
     require(!se::SchematicIO::Save(path,invalid,&error),"invalid duplicate IDs cannot overwrite a saved design");
     require(se::SchematicIO::Load(path,reopened,&error)&&reopened.components.size()==1,"rejected save leaves original design readable");

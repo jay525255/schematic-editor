@@ -3,7 +3,11 @@
 #include <limits>
 #include <set>
 namespace se {
-wxString LogicValueText(int value) {return value<0?"X":value==2?"ERR":wxString::Format("%d",value);}
+wxString LogicValueText(int value) {
+    if (value < 0) return "X";
+    if (value == 2) return "ERR";
+    return wxString::Format("%d", value);
+}
 wxString DigitalModel(const ComponentInstance& c) {
     if(!c.logicModel.empty()) return c.logicModel;
     static const std::map<wxString,wxString> models={
