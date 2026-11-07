@@ -27,6 +27,7 @@
 
 #include <wx/wx.h>
 #include <wx/geometry.h>
+#include <wx/timer.h>
 
 #include <functional>
 #include <map>
@@ -138,6 +139,9 @@ public:
 
     void StartSimulation();           // 开始仿真（初始化输入并求值）
     void StopSimulation();            // 停止仿真（恢复普通着色）
+    void PauseSimulation();
+    void StepSimulation();
+
     void RecomputeSimulation();       // 电路变动后重算一次
     void TickClock();                 // 打一拍时钟
 
@@ -429,6 +433,9 @@ private:
 
     // ---- 逻辑仿真（任务 6）---------------------------------
     Simulator m_sim;
+    wxTimer m_simTimer;
+    void OnSimulationTimer(wxTimerEvent& event);
+
 
     // ---- 交互状态 ------------------------------------------
     bool            m_panning = false;

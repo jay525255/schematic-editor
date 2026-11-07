@@ -49,6 +49,10 @@ private:
     wxTextCtrl*   m_desc      = nullptr;
     wxTextCtrl*   m_footprint = nullptr;
     wxTextCtrl*   m_value     = nullptr;
+    wxTextCtrl*   m_logicModel = nullptr;
+    wxTextCtrl*   m_truthTable = nullptr;
+    wxSpinCtrl*   m_delay = nullptr;
+    wxSpinCtrl*   m_period = nullptr;
     wxSpinCtrl*   m_inputs    = nullptr;
     wxSpinCtrl*   m_outputs   = nullptr;
     wxSpinCtrl*   m_width     = nullptr;

@@ -96,6 +96,13 @@ struct ComponentInstance
     //  所以 PinAnchor / PinPosition / 连通性求解完全不用管这个字段；
     //  只有绘制符号（SymbolPainter）要靠它把形状转到同样朝向。
     int              xform  = 0;
+
+    // Explicit digital behavior and discrete timing. Legacy files omit these fields.
+    wxString         logicModel;
+    wxString         truthTable;
+    int              delayTicks = 1;
+    int              clockPeriodTicks = 10;
+
 };
 
 // ------------------------------------------------------------

@@ -134,6 +134,10 @@ LogicValue Fold(const std::vector<LogicValue>& args,
 
 void Simulator::Reset(int componentCount)
 {
+    m_running = false;
+    m_temporal = false;
+    m_runtime = DigitalSimulator();
+    m_runtimeIds.clear();
     m_inputValues.assign(std::max(0, componentCount), LogicValue::L);
     m_netValues.clear();
     m_clockHigh      = false;
@@ -144,6 +148,10 @@ void Simulator::Reset(int componentCount)
 
 LogicValue Simulator::NetValue(int netIndex) const
 {
+    if (m_temporal) {
+        int v = m_runtime.Value(netIndex);
+        return v == 0 ? LogicValue::L : v == 1 ? LogicValue::H : LogicValue::X;
+    }
     if (netIndex < 0 || netIndex >= static_cast<int>(m_netValues.size()))
         return LogicValue::X;
 
@@ -152,6 +160,10 @@ LogicValue Simulator::NetValue(int netIndex) const
 
 LogicValue Simulator::InputValue(int compIndex) const
 {
+    if (m_temporal && compIndex >= 0 && compIndex < static_cast<int>(m_runtimeIds.size())) {
+        int v = m_runtime.InputValue(m_runtimeIds[compIndex]);
+        return v == 0 ? LogicValue::L : v == 1 ? LogicValue::H : LogicValue::X;
+    }
     if (compIndex < 0 || compIndex >= static_cast<int>(m_inputValues.size()))
         return LogicValue::L;
 
@@ -160,6 +172,11 @@ LogicValue Simulator::InputValue(int compIndex) const
 
 void Simulator::SetInputValue(int compIndex, LogicValue value)
 {
+    if (m_temporal) {
+        if (compIndex >= 0 && compIndex < static_cast<int>(m_runtimeIds.size()))
+            m_runtime.SetInput(m_runtimeIds[compIndex], value == LogicValue::L ? 0 : value == LogicValue::H ? 1 : -1);
+        return;
+    }
     if (compIndex < 0 || compIndex >= static_cast<int>(m_inputValues.size()))
         return;
 
@@ -168,6 +185,10 @@ void Simulator::SetInputValue(int compIndex, LogicValue value)
 
 void Simulator::ToggleInputValue(int compIndex)
 {
+    if (m_temporal) {
+        SetInputValue(compIndex, InputValue(compIndex) == LogicValue::H ? LogicValue::L : LogicValue::H);
+        return;
+    }
     if (compIndex < 0 || compIndex >= static_cast<int>(m_inputValues.size()))
         return;
 
@@ -369,8 +390,9 @@ wxString Simulator::BuildReport(const std::vector<ComponentInstance>& components
     text << wxString::Format(L"仿真状态   : %s\n", m_running ? L"运行中" : L"已停止");
     text << wxString::Format(L"元件总数   : %d\n", static_cast<int>(components.size()));
     text << wxString::Format(L"网络总数   : %d\n", static_cast<int>(graph.nets.size()));
-    text << wxString::Format(L"迭代次数   : %d\n", m_passes);
-    text << wxString::Format(L"时钟相位   : %s\n", m_clockHigh ? L"高电平" : L"低电平");
+    if (m_temporal) text << wxString::Format(L"仿真时间   : %llu 步\n", static_cast<unsigned long long>(m_runtime.Time()));
+    else text << wxString::Format(L"迭代次数   : %d\n", m_passes);
+    if (!m_temporal) text << wxString::Format(L"时钟相位   : %s\n", m_clockHigh ? L"高电平" : L"低电平");
     text << wxString::Format(L"未知网络数 : %d\n", m_unresolvedNets);
 
     if (m_hasConflict)
@@ -389,7 +411,7 @@ wxString Simulator::BuildReport(const std::vector<ComponentInstance>& components
         const Net& net = graph.nets[n];
         const int  index = static_cast<int>(n);
 
-        text << wxString::Format(L"  %-6s = %s", net.name, LogicText(NetValue(index)));
+        text << wxString::Format(L"  %-6s = %s", net.name, m_temporal ? LogicValueText(m_runtime.Value(index)) : LogicText(NetValue(index)));
 
         if (!net.pins.empty())
         {
@@ -436,7 +458,8 @@ wxString Simulator::BuildReport(const std::vector<ComponentInstance>& components
         else if (kind == SimKind::Clock)
         {
             text << wxString::Format(L"  [时钟] %-6s = %s\n",
-                                     comp.refdes, m_clockHigh ? L"1" : L"0");
+                                     comp.refdes, m_temporal && c < graph.pinNet.size() && !graph.pinNet[c].empty()
+                                      ? LogicValueText(m_runtime.Value(graph.pinNet[c][0])) : wxString(m_clockHigh ? "1" : "0"));
         }
         else if (kind == SimKind::Sink && comp.name == L"输出引脚")
         {
@@ -462,7 +485,7 @@ wxString Simulator::BuildReport(const std::vector<ComponentInstance>& components
 
     for (const ComponentInstance& comp : components)
     {
-        if (!IsSimulatable(comp.name))
+        if (m_temporal ? DigitalModel(comp).empty() : !IsSimulatable(comp.name))
             unsupported << L"  " << comp.refdes << L" (" << comp.name << L")\n";
     }
 
@@ -476,6 +499,31 @@ wxString Simulator::BuildReport(const std::vector<ComponentInstance>& components
     text << L"\n========================================\n";
 
     return text;
+}
+
+bool Simulator::StartRuntime(const std::vector<ComponentInstance>& components, const NetGraph& graph, wxString& error)
+{
+    auto runtimeComponents = components;
+    m_runtimeIds.clear();
+    for (auto& comp : runtimeComponents) {
+        m_runtimeIds.push_back(comp.id);
+        // Legacy builtin sources stored a descriptive value such as IN or CONST.
+        if (DigitalModel(comp) == "input" && comp.value != "0" && comp.value != "1" && comp.value != "X")
+            comp.value = "0";
+    }
+    m_temporal = m_runtime.Reset(runtimeComponents, graph, error);
+    m_running = m_temporal;
+    m_unresolvedNets = 0; m_hasConflict = false;
+    for (int value : m_runtime.Values()) { m_unresolvedNets += value < 0; m_hasConflict |= value == 2; }
+    return m_temporal;
+}
+
+bool Simulator::AdvanceRuntime()
+{
+    if (!RuntimeReady() || !m_runtime.Advance()) return false;
+    m_unresolvedNets = 0; m_hasConflict = false;
+    for (int value : m_runtime.Values()) { m_unresolvedNets += value < 0; m_hasConflict |= value == 2; }
+    return true;
 }
 
 } // namespace se

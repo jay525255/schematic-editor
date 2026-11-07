@@ -137,6 +137,7 @@
     <ClCompile Include="src\KiCadExport.cpp" />
     <ClCompile Include="src\SchematicIO.cpp" />
     <ClCompile Include="src\SimModel.cpp" />
+    <ClCompile Include="src\DigitalSimulator.cpp" />
     <ClCompile Include="src\SymbolPainter.cpp" />
     <ClCompile Include="src\TextReportDialog.cpp" />
   </ItemGroup>
@@ -150,6 +151,7 @@
     <ClInclude Include="src\KiCadExport.h" />
     <ClInclude Include="src\SchematicIO.h" />
     <ClInclude Include="src\SimModel.h" />
+    <ClInclude Include="src\DigitalSimulator.h" />
     <ClInclude Include="src\SymbolPainter.h" />
     <ClInclude Include="src\SchematicCanvas.h" />
     <ClInclude Include="src\LibraryPanel.h" />

@@ -44,6 +44,10 @@ struct ComponentDef
 
     // ---- 来源 ----
     bool          userDefined = false;  // true = 来自用户 XML（界面用星号标出）
+    wxString      logicModel;
+    wxString      truthTable;
+    int           delayTicks = 1;
+    int           clockPeriodTicks = 10;
 };
 
 // ------------------------------------------------------------

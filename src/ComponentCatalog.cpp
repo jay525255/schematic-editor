@@ -1,4 +1,6 @@
 #include "ComponentCatalog.h"
+#include "DigitalSimulator.h"
+#include <wx/wfstream.h>
 
 #include <wx/filefn.h>
 #include <wx/filename.h>
@@ -147,6 +149,10 @@ bool ParseLibraryFile(const wxString& path, std::vector<CategoryDef>& out, wxStr
             def.footprint   = node->GetAttribute(L"footprint");
             def.value       = node->GetAttribute(L"value");
             def.userDefined = true;
+            def.logicModel = node->GetAttribute("logicModel");
+            def.truthTable = node->GetAttribute("truthTable");
+            def.delayTicks = GetIntAttr(node, "delayTicks", 1);
+            def.clockPeriodTicks = GetIntAttr(node, "clockPeriodTicks", 10);
 
             // 夹得太小的元件框在画布上会挤成一团，兜一下底
             if (def.w < 24)
@@ -388,6 +394,10 @@ bool ComponentCatalog::SaveUserLibrary(const std::vector<CategoryDef>& categorie
             node->AddAttribute(L"height",      wxString::Format(L"%d", def.h));
             node->AddAttribute(L"footprint",   def.footprint);
             node->AddAttribute(L"value",       def.value);
+            node->AddAttribute("logicModel", def.logicModel);
+            node->AddAttribute("truthTable", def.truthTable);
+            node->AddAttribute("delayTicks", wxString::Format("%d", def.delayTicks));
+            node->AddAttribute("clockPeriodTicks", wxString::Format("%d", def.clockPeriodTicks));
 
             catNode->AddChild(node);
         }
@@ -397,7 +407,8 @@ bool ComponentCatalog::SaveUserLibrary(const std::vector<CategoryDef>& categorie
 
     doc.SetRoot(root);
 
-    if (!doc.Save(path))
+    wxTempFileOutputStream output(path);
+    if (!output.IsOk() || !doc.Save(output) || !output.Commit())
     {
         SetError(error, wxString::Format(L"无法写入元件库文件：%s", path));
         return false;
@@ -513,6 +524,19 @@ bool ComponentCatalog::ValidateDefinition(const ComponentDef& def, wxString* err
         auto at = PinPosition(probe, static_cast<int>(k));
         if (!positions.insert({at.x, at.y}).second)
             return reject(L"引脚位置重叠：请增大元件尺寸或减少引脚数");
+    }
+    if (def.delayTicks < 1 || def.delayTicks > 1000 || def.clockPeriodTicks < 2 ||
+        def.clockPeriodTicks > 10000 || def.clockPeriodTicks % 2)
+        return reject(L"传播延迟须为1至1000步，时钟周期须为2至10000的偶数步");
+    if (!def.logicModel.empty()) {
+        probe.id = 1; probe.logicModel = def.logicModel; probe.truthTable = def.truthTable;
+        probe.delayTicks = def.delayTicks; probe.clockPeriodTicks = def.clockPeriodTicks;
+        probe.value = def.value;
+        NetGraph graph; graph.pinNet.emplace_back();
+        for (size_t k = 0; k < probe.pins.size(); ++k) graph.pinNet[0].push_back(static_cast<int>(k));
+        graph.nets.resize(probe.pins.size());
+        DigitalSimulator simulator; wxString reason;
+        if (!simulator.Reset({probe}, graph, reason)) return reject(reason);
     }
     if (error) error->clear();
     return true;

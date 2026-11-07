@@ -1,22 +1,4 @@
-// ============================================================
-//  SimModel.h  —— 逻辑仿真引擎（任务 6）
-//
-//  设计要点：
-//    * 仿真与界面完全解耦：只吃「元件表 + 连通性结果」，
-//      输出「每个网络的逻辑值」，不碰任何绘图代码。
-//    * 求值用**定点迭代**：反复让每个元件按当前输入算输出，
-//      直到所有网络的值不再变化（或达到上限）。
-//      对课程规模的电路（几十~几百个门）来说，
-//      比写一个完整的拓扑排序 + 事件队列简单得多，
-//      而且天然容忍组合环（环路会停在 X 上并报告"未收敛"）。
-//    * 电源/输入端口/时钟是"驱动源"，其余是可仿真的逻辑门；
-//      电阻/电容/二极管等模拟器件不参与逻辑仿真，输出记为 X（未知）。
-//
-//  与任务 6 的对应：
-//    「动态电路信号传播」= 每次求值把变化沿导线传播到稳定状态
-//    「实时逻辑仿真」    = 用户切换输入端口 / 打一拍时钟后立即重算并显示
-// ============================================================
-
+// Steady-state evaluator plus a timed event-driven runtime. GUI uses the timed runtime.
 #pragma once
 
 #include <wx/string.h>
@@ -24,6 +6,7 @@
 #include <vector>
 
 #include "NetModel.h"
+#include "DigitalSimulator.h"
 
 namespace se
 {
@@ -67,6 +50,12 @@ class Simulator
 {
 public:
     void Reset(int componentCount);
+    bool StartRuntime(const std::vector<ComponentInstance>& components, const NetGraph& graph, wxString& error);
+    bool AdvanceRuntime();
+    int RawNetValue(int net) const { return m_temporal ? m_runtime.Value(net) : NetValue(net) == LogicValue::H ? 1 : NetValue(net) == LogicValue::L ? 0 : -1; }
+    bool RuntimeReady() const { return m_temporal && m_runtime.Ready(); }
+    std::uint64_t RuntimeTime() const { return m_runtime.Time(); }
+
 
     // 求值一次。返回 false 表示未收敛（电路中有组合环或多驱动）
     bool Evaluate(const std::vector<ComponentInstance>& components,
@@ -77,7 +66,7 @@ public:
 
     // ---- 网络逻辑值（下标对应 NetGraph::nets）----
     LogicValue NetValue(int netIndex) const;
-    int        NetValueCount() const { return static_cast<int>(m_netValues.size()); }
+    int        NetValueCount() const { return static_cast<int>(m_temporal ? m_runtime.Values().size() : m_netValues.size()); }
 
     // ---- 输入端口 / 常量 的用户设定值 ----
     LogicValue InputValue(int compIndex) const;
@@ -99,6 +88,9 @@ public:
                          const NetGraph&                       graph) const;
 
 private:
+    DigitalSimulator m_runtime;
+    bool m_temporal = false;
+    std::vector<int> m_runtimeIds;
     std::vector<LogicValue> m_netValues;   // 与 nets 平行
     std::vector<LogicValue> m_inputValues; // 与 components 平行（仅 Source/Clock 有意义）
 

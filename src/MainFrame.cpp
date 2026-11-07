@@ -410,7 +410,9 @@ void MainFrame::CreateMenus()
     toolsMenu->Append(ID_TOOLS_GENERATE_BOM,     L"生成物料清单 (BOM)...");
     toolsMenu->AppendSeparator();
     toolsMenu->Append(ID_TOOLS_SIMULATOR, L"电路仿真器...");
-    toolsMenu->Append(ID_SIM_TICK,        L"仿真：时钟单步\tSpace");
+    toolsMenu->Append(ID_SIM_RUN, L"仿真：运行 / 暂停\tF5");
+    toolsMenu->Append(ID_SIM_STOP, L"仿真：重置\tShift+F5");
+    toolsMenu->Append(ID_SIM_TICK,        L"仿真：暂停并单步\tF6");
     toolsMenu->AppendSeparator();
     toolsMenu->Append(ID_LIBRARY_MANAGE,  L"元件库管理...");
     toolsMenu->Append(ID_LIBRARY_RELOAD,  L"重新加载元件库");
@@ -617,9 +619,7 @@ void MainFrame::UpdateStatusBar()
 
     if (m_canvas->IsSimulating())
     {
-        tool = m_canvas->GetSimulator().GetClockHigh()
-                   ? L"仿真中 · 时钟高电平"
-                   : L"仿真中 · 时钟低电平";
+        tool = wxString::Format(L"仿真运行 · t=%llu步", static_cast<unsigned long long>(m_canvas->GetSimulator().RuntimeTime()));
     }
     else
     {
@@ -734,6 +734,11 @@ void MainFrame::UpdateProperties()
                             comp->value.IsEmpty() ? comp->name : comp->value,
                             L"comp.value");
 
+        m_props->AddCategory(L"数字仿真（每步100ms）");
+        m_props->AddEditRow(L"模型（空=按名称）", comp->logicModel, "comp.logicModel");
+        m_props->AddEditIntRow(L"传播延迟（步）", comp->delayTicks, "comp.delayTicks");
+        m_props->AddEditIntRow(L"时钟周期（偶数步）", comp->clockPeriodTicks, "comp.clockPeriodTicks");
+        m_props->AddEditRow(L"真值表位串", comp->truthTable, "comp.truthTable");
         m_props->AddCategory(L"引脚连接");
 
         for (size_t k = 0; k < comp->pins.size(); ++k)
@@ -1528,8 +1533,8 @@ void MainFrame::OnCommand(wxCommandEvent& event)
         {
             if (m_canvas->IsSimulating())
             {
-                m_canvas->StopSimulation();
-                SetHint(L"仿真已停止（导线恢复普通着色）");
+                m_canvas->PauseSimulation();
+                SetHint(L"仿真已暂停；再次点击继续");
             }
             else
             {
@@ -1565,7 +1570,7 @@ void MainFrame::OnCommand(wxCommandEvent& event)
                 m_canvas->StartSimulation();
 
                 if (m_toolBar)
-                    m_toolBar->ToggleTool(ID_SIM_RUN, true);
+                    m_toolBar->ToggleTool(ID_SIM_RUN, m_canvas->IsSimulating());
             }
 
             TextReportDialog dialog(this,
@@ -1579,6 +1584,10 @@ void MainFrame::OnCommand(wxCommandEvent& event)
             return;
         }
 
+        case ID_SIM_STOP:
+            m_canvas->StopSimulation();
+            if (m_toolBar) m_toolBar->ToggleTool(ID_SIM_RUN, false);
+            SetHint(L"仿真已重置"); return;
         case ID_SIM_TICK:
             m_canvas->TickClock();
             UpdateStatusBar();

@@ -31,5 +31,8 @@ int main(int argc,char** argv) { try {
     auto power=component(L"VCC",1,{0,0});auto other=power;other.id=2;other.pos={200,0};
     auto powers=se::NetBuilder::Build({power,other},{});
     require(powers.pinNet[0][0]==powers.pinNet[1][0],"same named power terminals form one network");
+    const auto future=wxFileName(wxString::FromUTF8(argv[2]),"future.ses").GetFullPath();
+    require(se::SchematicIO::WriteTextFile(future,"<schematic version=\"99.0\"/>",&error),"prepare unsupported future design");
+    require(!se::SchematicIO::Load(future,reopened,&error)&&reopened.components.size()==1,"unsupported version cannot replace current document");
     return 0;
 } catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;} }

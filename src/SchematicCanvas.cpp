@@ -70,6 +70,8 @@ SchematicCanvas::SchematicCanvas(wxWindow* parent)
                wxDefaultSize,
                wxFULL_REPAINT_ON_RESIZE | wxWANTS_CHARS)
 {
+    m_simTimer.SetOwner(this);
+    Bind(wxEVT_TIMER, &SchematicCanvas::OnSimulationTimer, this, m_simTimer.GetId());
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     SetBackgroundColour(wxColour(250, 250, 252));
     SetCursor(wxCursor(wxCURSOR_CROSS));
@@ -604,65 +606,65 @@ wxString SchematicCanvas::BuildNetlistProtel()
 
 void SchematicCanvas::StartSimulation()
 {
-    GetNetGraph();
-
-    m_sim.Reset(static_cast<int>(m_components.size()));
+    if (!m_sim.RuntimeReady()) {
+        m_sim.Reset(static_cast<int>(m_components.size()));
+        wxString error;
+        if (!m_sim.StartRuntime(m_components, GetNetGraph(), error)) {
+            if (OnStatusMessage) OnStatusMessage(L"无法运行数字仿真：" + error);
+            return;
+        }
+    }
     m_sim.SetRunning(true);
-    m_sim.SetClockHigh(false);
+    m_simTimer.Start(100);
+    if (OnStatusMessage) OnStatusMessage(L"数字仿真运行中：每步100ms，点击输入切换，空格暂停并单步");
+    Refresh();
+}
 
-    RecomputeSimulation();
-
-    if (OnStatusMessage)
-        OnStatusMessage(wxString::Format(
-            L"仿真已启动：%d 个元件、%d 个网络。点击「输入引脚/常量」可切换 0/1",
-            GetComponentCount(),
-            static_cast<int>(GetNetGraph().nets.size())));
-
+void SchematicCanvas::PauseSimulation()
+{
+    m_simTimer.Stop();
+    m_sim.SetRunning(false);
+    if (OnStatusMessage) OnStatusMessage(L"仿真已暂停；再次运行会从同一时间继续");
     Refresh();
 }
 
 void SchematicCanvas::StopSimulation()
 {
-    if (!m_sim.IsRunning())
-        return;
-
+    m_simTimer.Stop();
     m_sim.SetRunning(false);
-
-    if (OnStatusMessage)
-        OnStatusMessage(L"仿真已停止");
-
+    m_sim.Reset(static_cast<int>(m_components.size()));
     Refresh();
+}
+
+void SchematicCanvas::OnSimulationTimer(wxTimerEvent&)
+{
+    if (!m_sim.IsRunning()) return;
+    if (!m_sim.AdvanceRuntime()) { StopSimulation(); return; }
+    if (OnStatusMessage) OnStatusMessage(wxString::Format(L"数字仿真 t=%llu步", static_cast<unsigned long long>(m_sim.RuntimeTime())));
+    Refresh();
+}
+
+void SchematicCanvas::StepSimulation()
+{
+    if (!m_sim.RuntimeReady()) StartSimulation();
+    if (!m_sim.RuntimeReady()) return;
+    PauseSimulation();
+    m_sim.AdvanceRuntime();
+    Refresh();
+    if (OnStatusMessage) OnStatusMessage(wxString::Format(L"仿真已暂停 t=%llu步", static_cast<unsigned long long>(m_sim.RuntimeTime())));
 }
 
 void SchematicCanvas::RecomputeSimulation()
 {
-    if (!m_sim.IsRunning())
-        return;
-
-    const bool converged = m_sim.Evaluate(m_components, GetNetGraph());
-
-    if (!converged && OnStatusMessage)
-        OnStatusMessage(L"仿真未收敛：电路可能存在组合环或多驱动");
-
+    // Runtime topology is immutable; edits invalidate it through PushUndo/Touch.
     Refresh();
 }
 
-void SchematicCanvas::TickClock()
-{
-    if (!m_sim.IsRunning())
-        return;
-
-    m_sim.TickClock();
-    RecomputeSimulation();
-
-    if (OnStatusMessage)
-        OnStatusMessage(wxString::Format(L"时钟 → %s",
-                                         m_sim.GetClockHigh() ? L"高电平 (1)" : L"低电平 (0)"));
-}
+void SchematicCanvas::TickClock() { StepSimulation(); }
 
 int SchematicCanvas::ToggleInputAt(const wxPoint& world)
 {
-    if (!m_sim.IsRunning())
+    if (!m_sim.RuntimeReady())
         return -1;
 
     const int index = HitTestComponent(world);
@@ -670,7 +672,7 @@ int SchematicCanvas::ToggleInputAt(const wxPoint& world)
     if (index < 0)
         return -1;
 
-    if (SimKindOf(m_components[index].name) != SimKind::Source)
+    if (DigitalModel(m_components[index]) != "input")
         return -1;
 
     m_sim.ToggleInputValue(index);
@@ -691,11 +693,10 @@ wxString SchematicCanvas::BuildSimulationReport()
 
 void SchematicCanvas::Touch()
 {
+    StopSimulation();
     m_modified = true;
 
-    // 仿真进行中：电路一变就立刻重算，保证显示与实际一致
-    if (m_sim.IsRunning())
-        RecomputeSimulation();
+    // Document edits invalidate the immutable timed net graph and pending events.
 }
 
 wxString SchematicCanvas::BuildErcReport()
@@ -809,7 +810,7 @@ void SchematicCanvas::DrawTexts(wxGraphicsContext* gc)
 // ------------------------------------------------------------
 void SchematicCanvas::DrawSimValues(wxGraphicsContext* gc)
 {
-    if (!m_sim.IsRunning())
+    if (!m_sim.RuntimeReady())
         return;
 
     const int fontSize = std::max(7, static_cast<int>(std::lround(9.0 * m_zoom)));
@@ -832,7 +833,8 @@ void SchematicCanvas::DrawSimValues(wxGraphicsContext* gc)
         }
         else if (kind == SimKind::Clock)
         {
-            value = m_sim.GetClockHigh() ? LogicValue::H : LogicValue::L;
+            if (i < m_graph.pinNet.size() && !m_graph.pinNet[i].empty())
+                value = m_sim.NetValue(m_graph.pinNet[i][0]);
             show  = true;
         }
         else if (kind == SimKind::Sink)
@@ -1058,7 +1060,7 @@ void SchematicCanvas::DrawWires(wxGraphicsContext* gc)
         wxColour colour = kWireColour;
         double   width  = std::max(1.0, 2.0 * m_zoom);
 
-        const bool simulating = m_sim.IsRunning();
+        const bool simulating = m_sim.RuntimeReady();
 
         // 仿真中：导线按所在网络的逻辑值着色。
         // 此时逻辑值是最重要的信息，优先级高于"网络高亮"，
@@ -1095,7 +1097,7 @@ void SchematicCanvas::DrawWires(wxGraphicsContext* gc)
         const wxPoint2DDouble s = ToScreen(wxPoint2DDouble(j.x, j.y));
 
         // 仿真中连接点跟着所在网络一起变色，避免绿线上挂一堆灰点
-        if (m_sim.IsRunning())
+        if (m_sim.RuntimeReady())
         {
             const int wireIndex = WireAtJunction(m_wires, j);
 
@@ -1174,7 +1176,7 @@ void SchematicCanvas::DrawComponents(wxGraphicsContext* gc)
             wxColour pinColour(90, 100, 120);
             double   pinWidth = 1.5;
 
-            if (m_sim.IsRunning() && netIdx >= 0)
+            if (m_sim.RuntimeReady() && netIdx >= 0)
             {
                 pinColour = NetColourFor(m_sim.NetValue(netIdx));
                 pinWidth  = 2.0;
@@ -1499,7 +1501,7 @@ void SchematicCanvas::OnLeftDown(wxMouseEvent& event)
     }
 
     // ---- 仿真中：点到「输入引脚 / 常量」就切换它的逻辑值 ----
-    if (m_sim.IsRunning() && ToggleInputAt(point) >= 0)
+    if (m_sim.RuntimeReady() && ToggleInputAt(point) >= 0)
     {
         NotifySelectionChanged();
         return;
@@ -1807,7 +1809,7 @@ void SchematicCanvas::OnKeyDown(wxKeyEvent& event)
 
         case WXK_SPACE:
             // 仿真中：空格打一拍时钟
-            if (m_sim.IsRunning())
+            if (m_sim.RuntimeReady())
             {
                 TickClock();
                 return;
@@ -2003,6 +2005,12 @@ void SchematicCanvas::PlaceComponent(const wxPoint& world)
     // PCB 网表需要的两项，从元件定义带过来
     comp.footprint = m_pending->footprint;
     comp.value     = m_pending->value;
+    comp.logicModel = m_pending->logicModel;
+    comp.truthTable = m_pending->truthTable;
+    comp.delayTicks = m_pending->delayTicks;
+    comp.clockPeriodTicks = m_pending->clockPeriodTicks;
+    if (DigitalModel(comp) == "input" && comp.value != "0" && comp.value != "1" && comp.value != "X") comp.value = "0";
+
 
     // 以光标为中心；中心与左上角都对齐到网格，
     // 这样引脚（PinAnchor 内部也对齐到 10）一定落在网格上，画线不会产生小折角
@@ -2704,6 +2712,24 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
             return true;
         }
 
+        if (field == "logicModel" || field == "truthTable" || field == "delayTicks" || field == "clockPeriodTicks") {
+            ComponentInstance candidate = comp;
+            if (field == "logicModel") candidate.logicModel = value;
+            else if (field == "truthTable") candidate.truthTable = value;
+            else {
+                long n = 0; if (!value.ToLong(&n) || n < 1 || n > 10000) return Reject(L"时间参数须为正整数");
+                if (field == "delayTicks") candidate.delayTicks = static_cast<int>(n);
+                else candidate.clockPeriodTicks = static_cast<int>(n);
+            }
+            auto validation = candidate; validation.id = 1;
+            if (DigitalModel(validation) == "input" && validation.value != "0" && validation.value != "1" && validation.value != "X") validation.value = "0";
+            // Allow entering a truth table before switching the model to truth.
+            NetGraph graph; graph.nets.resize(validation.pins.size()); graph.pinNet.emplace_back();
+            for (size_t k = 0; k < validation.pins.size(); ++k) graph.pinNet[0].push_back(static_cast<int>(k));
+            DigitalSimulator simulator; wxString reason;
+            if (!simulator.Reset({validation}, graph, reason)) return Reject(reason);
+            PushUndo(L"修改数字仿真参数"); comp = candidate; Touch(); Refresh(); return true;
+        }
         if (field == L"footprint")
         {
             // 电源 / 地 / 网络标签没有封装概念，改了也不会进 PCB 网表
@@ -2973,6 +2999,7 @@ void SchematicCanvas::ClearAll(bool markModified)
     if (markModified && (!m_components.empty() || !m_wires.empty() || !m_texts.empty()))
         PushUndo(L"清空画布");
 
+    StopSimulation();
     m_components.clear();
     m_wires.clear();
     m_texts.clear();
@@ -3024,6 +3051,7 @@ void SchematicCanvas::SetDocument(const std::vector<ComponentInstance>& componen
                                   bool   snapEnabled,
                                   double zoom)
 {
+    StopSimulation();
     m_components  = components;
     m_wires       = wires;
     m_texts       = texts;

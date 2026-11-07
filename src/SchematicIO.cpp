@@ -3,6 +3,7 @@
 #include <wx/file.h>
 #include <wx/filename.h>
 #include <wx/xml/xml.h>
+#include <wx/wfstream.h>
 
 #include "ComponentCatalog.h"
 
@@ -138,7 +139,7 @@ bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxStr
     xml.SetFileEncoding(L"UTF-8");
 
     wxXmlNode* root = new wxXmlNode(nullptr, wxXML_ELEMENT_NODE, L"schematic");
-    root->AddAttribute(L"version", L"1.0");
+    root->AddAttribute(L"version", L"1.1");
     root->AddAttribute(L"format", L"circuit-schematic");
     root->AddAttribute(L"generator", L"SchematicEditor 1.0");
 
@@ -170,6 +171,10 @@ bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxStr
         // 旋转 / 镜像：0..7（0..3 = 顺时针 0/90/180/270 度，4..7 = 先水平镜像再转）
         // 老文件里没有这个属性，读的时候默认 0，完全兼容
         AddIntAttr(node, "xform", comp.xform);
+        node->AddAttribute("logicModel", comp.logicModel);
+        node->AddAttribute("truthTable", comp.truthTable);
+        AddIntAttr(node, "delayTicks", comp.delayTicks);
+        AddIntAttr(node, "clockPeriodTicks", comp.clockPeriodTicks);
 
         // 引脚一起存：文件自包含，不依赖当前元件库版本
         for (const Pin& pin : comp.pins)
@@ -240,7 +245,8 @@ bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxStr
         return false;
     }
 
-    if (!xml.Save(path))
+    wxTempFileOutputStream output(path);
+    if (!output.IsOk() || !xml.Save(output) || !output.Commit())
     {
         SetError(error, L"写不进去（文件被占用或没有写权限？）");
         return false;
@@ -278,6 +284,10 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
         return false;
     }
 
+    const auto version = root->GetAttribute("version", "1.0");
+    if (version != "1.0" && version != "1.1") {
+        SetError(error, L"不支持的文件版本：" + version); return false;
+    }
     SchematicDocument loaded;
 
     for (wxXmlNode* section = root->GetChildren(); section; section = section->GetNext())
@@ -322,6 +332,10 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
 
                 // 旋转 / 镜像：老文件没有这个属性 → 0（不转）
                 comp.xform = GetIntAttr(node, "xform", 0);
+                comp.logicModel = GetStrAttr(node, "logicModel");
+                comp.truthTable = GetStrAttr(node, "truthTable");
+                comp.delayTicks = GetIntAttr(node, "delayTicks", 1);
+                comp.clockPeriodTicks = GetIntAttr(node, "clockPeriodTicks", 10);
 
                 if (comp.xform < 0 || comp.xform > 7)
                     comp.xform = 0;

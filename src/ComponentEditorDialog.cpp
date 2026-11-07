@@ -47,7 +47,7 @@ ComponentEditorDialog::ComponentEditorDialog(wxWindow* parent)
 
     RebuildList(m_categories[m_cat].items.empty() ? -1 : 0);
 
-    SetMinSize(wxSize(720, 430));
+    SetMinSize(wxSize(760, 680));
     Fit();
 
     CentreOnParent();
@@ -163,6 +163,16 @@ void ComponentEditorDialog::BuildUi()
     grid->Add(label(L"元件值/型号"), 0, wxALIGN_CENTER_VERTICAL);
     grid->Add(m_value, 1, wxEXPAND);
 
+    m_logicModel = new wxTextCtrl(this, wxID_ANY);
+    m_logicModel->SetToolTip(L"留空按名称识别；and/nand/or/nor/not/buffer/xor/xnor/half-adder/full-adder/input/clock/observe/truth");
+    grid->Add(label(L"数字逻辑模型"), 0, wxALIGN_CENTER_VERTICAL); grid->Add(m_logicModel, 1, wxEXPAND);
+    m_truthTable = new wxTextCtrl(this, wxID_ANY);
+    m_truthTable->SetToolTip(L"truth模型：输入第1脚为最低位，按输入组合从0递增；每行按输出脚顺序写0或1，行间不加空格。例如异或：0110");
+    grid->Add(label(L"真值表位串"), 0, wxALIGN_CENTER_VERTICAL); grid->Add(m_truthTable, 1, wxEXPAND);
+    m_delay = new wxSpinCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS, 1, 1000, 1);
+    grid->Add(label(L"传播延迟（步）"), 0, wxALIGN_CENTER_VERTICAL); grid->Add(m_delay, 1, wxEXPAND);
+    m_period = new wxSpinCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS, 2, 10000, 10);
+    grid->Add(label(L"时钟周期（偶数步）"), 0, wxALIGN_CENTER_VERTICAL); grid->Add(m_period, 1, wxEXPAND);
     body->Add(grid, 1, wxEXPAND);
 
     outer->Add(body, 1, wxEXPAND | wxLEFT | wxRIGHT, 12);
@@ -188,10 +198,10 @@ void ComponentEditorDialog::BuildUi()
     saveButton->Bind(wxEVT_BUTTON, &ComponentEditorDialog::OnSave,  this);
 
     // 字段一改就顺手写回模型，避免“切走了才发现没保存”
-    for (wxTextCtrl* ctrl : { m_name, m_refPrefix, m_desc, m_footprint, m_value })
+    for (wxTextCtrl* ctrl : { m_name, m_refPrefix, m_desc, m_footprint, m_value, m_logicModel, m_truthTable })
         ctrl->Bind(wxEVT_TEXT, [this](wxCommandEvent& e) { FlushControls(); e.Skip(); });
 
-    for (wxSpinCtrl* ctrl : { m_inputs, m_outputs, m_width, m_height })
+    for (wxSpinCtrl* ctrl : { m_inputs, m_outputs, m_width, m_height, m_delay, m_period })
         ctrl->Bind(wxEVT_SPINCTRL, [this](wxCommandEvent& e) { FlushControls(); e.Skip(); });
 
     m_kind->Bind(wxEVT_CHOICE, [this](wxCommandEvent& e) { FlushControls(); e.Skip(); });
@@ -235,7 +245,7 @@ void ComponentEditorDialog::LoadToControls()
         m_cat >= static_cast<int>(m_categories.size()) ||
         m_item >= static_cast<int>(m_categories[m_cat].items.size()))
     {
-        for (wxTextCtrl* ctrl : { m_name, m_refPrefix, m_desc, m_footprint, m_value })
+        for (wxTextCtrl* ctrl : { m_name, m_refPrefix, m_desc, m_footprint, m_value, m_logicModel, m_truthTable })
             ctrl->ChangeValue(wxEmptyString);
 
         m_inputs->SetValue(0);
@@ -249,6 +259,7 @@ void ComponentEditorDialog::LoadToControls()
         m_desc->Enable(false);
         m_footprint->Enable(false);
         m_value->Enable(false);
+        m_logicModel->Enable(false); m_truthTable->Enable(false); m_delay->Enable(false); m_period->Enable(false);
         m_inputs->Enable(false);
         m_outputs->Enable(false);
         m_width->Enable(false);
@@ -266,6 +277,8 @@ void ComponentEditorDialog::LoadToControls()
     m_desc->ChangeValue(def.description);
     m_footprint->ChangeValue(def.footprint);
     m_value->ChangeValue(def.value);
+    m_logicModel->ChangeValue(def.logicModel); m_truthTable->ChangeValue(def.truthTable);
+    m_delay->SetValue(def.delayTicks); m_period->SetValue(def.clockPeriodTicks);
     m_inputs->SetValue(def.inputs);
     m_outputs->SetValue(def.outputs);
     m_width->SetValue(def.w);
@@ -285,6 +298,8 @@ void ComponentEditorDialog::LoadToControls()
                             static_cast<wxWindow*>(m_desc),
                             static_cast<wxWindow*>(m_footprint),
                             static_cast<wxWindow*>(m_value),
+                            static_cast<wxWindow*>(m_logicModel), static_cast<wxWindow*>(m_truthTable),
+                            static_cast<wxWindow*>(m_delay), static_cast<wxWindow*>(m_period),
                             static_cast<wxWindow*>(m_inputs),
                             static_cast<wxWindow*>(m_outputs),
                             static_cast<wxWindow*>(m_width),
@@ -316,6 +331,8 @@ void ComponentEditorDialog::FlushControls()
     def.h           = m_height->GetValue();
     def.footprint   = m_footprint->GetValue().Trim();
     def.value       = m_value->GetValue().Trim();
+    def.logicModel = m_logicModel->GetValue().Trim(); def.truthTable = m_truthTable->GetValue().Trim();
+    def.delayTicks = m_delay->GetValue(); def.clockPeriodTicks = m_period->GetValue();
     def.userDefined = true;
 
     switch (m_kind->GetSelection())

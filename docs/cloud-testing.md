@@ -12,11 +12,26 @@ records absent/failed/skipped cases as not passed. GUI failures retain a failure
 screenshot when a display is available. A missing display/dependency is an error.
 Artifacts expire after 14 days; download a validated run for longer retention.
 
-The baseline intentionally exposes audited defects instead of accepting them as
-expected passes. In particular the dense-pin regression and current Protel-to-KiCad
-import may fail until their production fixes land. Passing steady-state truth-table
-checks does not mean delayed simulation exists. Add temporal assertions with the
-future timing model. All automated tests are executed in Actions, not locally.
+Acceptance covers file round trips, globally unique references, dense-pin rejection,
+connected multi-selection/interior-pin/branch movement, gate and adder truth tables,
+and timed propagation. Temporal scenarios assert accumulated gate delays, live input
+changes, short-pulse cancellation, independent automatic clocks, conflicting drivers,
+and persisted custom truth tables. Native GUI checks operate real menus, shortcuts,
+mouse placement/wiring/dragging, copy/paste, delete/undo, save/open, and simulation
+run/pause/step/resume/reset. The KiCad test loads the exported native netlist through
+PCB Editor's actual GUI, saves the board, and checks every footprint and pad net.
+All automated tests execute in Actions, never locally.
+
+The timed digital runtime uses logical ticks (one GUI timer tick is 100 ms); wire
+nets are ideal connections and gates have configurable inertial delay. It is not an
+analog/SPICE simulator. F5 runs/pauses, F6 pauses and steps once, Shift+F5 resets;
+click an input source to change its live value. Document edits clear runtime state.
+Models may be named explicitly in the library editor or instance properties.
+`truth` tables contain row-major bits without spaces: first input is the low bit,
+rows increment from zero, outputs follow pin order. A two-input XOR is `0110`.
+Version 1.1 designs preserve model/table/delay/clock period; version 1.0 remains
+readable. Unsupported future versions are rejected. Design and library saves use
+a temporary output and commit only after successful XML serialization.
 
 Future changes must add focused regressions, be pushed, and have actual cloud results
 reviewed. A YAML file or screenshot alone is not acceptance.

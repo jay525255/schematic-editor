@@ -35,7 +35,7 @@ void fileCommand(int modifiers,int code,const wxString& filename){
 }
 }
 int main(int argc,char**argv){
-    if(argc!=2){std::cerr<<"expected output directory\n";return 2;}
+    if(argc!=3){std::cerr<<"expected output directory\n";return 2;}
     out=wxFileName(wxString::FromUTF8(argv[1]),"").GetFullPath();wxFileName::Mkdir(out,wxS_DIR_DEFAULT,wxPATH_MKDIR_FULL);
     int wxargc=1;if(!wxEntryStart(wxargc,argv)){std::cerr<<"FAIL no display, no GUI operations executed\n";return 1;}
     if(!wxTheApp->CallOnInit())return 1;wxLog::SetActiveTarget(new wxLogStderr());
@@ -64,6 +64,25 @@ int main(int argc,char**argv){
         canvas->StartSimulation();
         key('A',wxMOD_CONTROL);key(WXK_DELETE);check(canvas->GetComponentCount()==0,"native Delete removes selected objects");check(!canvas->IsSimulating(),"topology edit invalidates runtime state");key('Z',wxMOD_CONTROL);check(canvas->GetComponentCount()==2,"native undo restores deletion");
         check(screenshot("roundtrip.png"),"save real roundtrip screenshot");
+        key('S',wxMOD_CONTROL);
+        fileCommand(wxMOD_CONTROL,'O',wxString::FromUTF8(argv[2]));
+        check(canvas->GetComponentCount()==3,"native open loads dynamic AND circuit");
+        key(WXK_F5);pump(450);check(canvas->IsSimulating()&&canvas->GetSimulator().RuntimeTime()>=3,"native Run advances real timer");
+        key(WXK_F5);check(!canvas->IsSimulating(),"native Pause stops automatic timer");
+        auto paused=canvas->GetSimulator().RuntimeTime();pump(350);
+        check(canvas->GetSimulator().RuntimeTime()==paused,"pause preserves exact simulation time");
+        auto outputNet=canvas->GetNetGraph().pinNet[2][2];
+        check(canvas->GetSimulator().NetValue(outputNet)==se::LogicValue::L,"AND starts with low output");
+        click(canvas,canvas->ScreenPoint({-180,-60}));
+        check(canvas->GetSimulator().InputValue(0)==se::LogicValue::H,"native mouse changes first digital input");
+        key(WXK_F6);check(canvas->GetSimulator().RuntimeTime()==paused+1,"native step advances exactly one tick");
+        click(canvas,canvas->ScreenPoint({-180,60}));
+        check(canvas->GetSimulator().InputValue(1)==se::LogicValue::H,"native mouse changes second digital input");
+        check(canvas->GetSimulator().NetValue(outputNet)==se::LogicValue::L,"output waits for propagation event");
+        key(WXK_F6);check(canvas->GetSimulator().NetValue(outputNet)==se::LogicValue::H,"native step propagates high through AND");
+        check(screenshot("dynamic-simulation.png"),"save actual dynamic signal screenshot");
+        key(WXK_F5);pump(250);key(WXK_F5);check(canvas->GetSimulator().RuntimeTime()>paused+2,"native Resume continues existing timeline");
+        key(WXK_F5,wxMOD_SHIFT);check(!canvas->GetSimulator().RuntimeReady(),"native Reset clears pending events");
         canvas->MarkSaved();frame->Destroy();pump();frame=nullptr;wxTheApp->OnExit();wxEntryCleanup();return 0;
     }catch(const std::exception& e){screenshot("failure.png");std::cerr<<"FAIL "<<e.what()<<std::endl;return 1;}
 }
