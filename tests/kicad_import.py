@@ -151,7 +151,9 @@ try:
         if board is None:raise RuntimeError('KiCad could not reopen its saved board')
         references={};pads={}
         for footprint in board.GetFootprints():
-            reference=footprint.GetReference();references[reference]=footprint.GetFPID().Format()
+            reference=footprint.GetReference()
+            lib_id=footprint.GetFPID()
+            references[reference]=str(lib_id.GetLibNickname())+":"+str(lib_id.GetLibItemName())
             for pad in footprint.Pads():pads[reference+'.'+pad.GetNumber()]=pad.GetNetname()
         result['loaded_footprints']=references;result['loaded_pad_nets']=pads
         expected={'IN1.1':'N1','IN2.1':'N2','U3.1':'N1','U3.2':'N2','U3.3':'N3'}
