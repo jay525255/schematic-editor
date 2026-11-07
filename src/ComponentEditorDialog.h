@@ -12,6 +12,7 @@
 
 #include <wx/wx.h>
 #include <wx/listbox.h>
+#include <wx/spinctrl.h>
 
 #include <vector>
 

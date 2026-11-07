@@ -1,0 +1,2 @@
+#pragma once
+#define SE_SOURCE_REV "@SE_SOURCE_REV@"

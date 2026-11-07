@@ -75,6 +75,10 @@ public:
     void SetCrosshairVisible(bool on);
 
     // ---- 状态查询 ------------------------------------------
+    wxPoint ScreenPoint(const wxPoint& world) const {
+        auto p = ToScreen(wxPoint2DDouble(world.x, world.y));
+        return wxPoint(static_cast<int>(p.m_x), static_cast<int>(p.m_y));
+    }
     double GetZoom() const { return m_zoom; }
     int    GetGridStep() const { return m_gridStep; }
     int    GetComponentCount() const { return static_cast<int>(m_components.size()); }

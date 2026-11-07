@@ -17,6 +17,7 @@
 #include <wx/image.h>
 #include <wx/stdpaths.h>
 #include <wx/filename.h>
+#include <wx/ffile.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -38,16 +39,9 @@ static void AssertLogger(const wxString& file, int line, const wxString& func,
     wxFileName logFile(wxStandardPaths::Get().GetExecutablePath());
     logFile.SetFullName(L"assert.log");
 
-    if (FILE* fp = _wfopen(logFile.GetFullPath().wc_str(), L"a, ccs=UTF-8"))
-    {
-        fwprintf(fp, L"--- 断言失败 ---\n");
-        fwprintf(fp, L"文件 : %s\n", file.wc_str());
-        fwprintf(fp, L"行号 : %d\n", line);
-        fwprintf(fp, L"函数 : %s\n", func.wc_str());
-        fwprintf(fp, L"条件 : %s\n", cond.wc_str());
-        fwprintf(fp, L"说明 : %s\n\n", msg.wc_str());
-        fclose(fp);
-    }
+    wxFFile fileOut(logFile.GetFullPath(), L"a");
+    if (fileOut.IsOpened())
+        fileOut.Write(wxString::Format(L"Assert: %s:%d %s %s %s\n", file, line, func, cond, msg), wxConvUTF8);
 }
 #endif
 

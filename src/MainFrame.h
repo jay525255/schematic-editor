@@ -35,6 +35,7 @@ class MainFrame : public wxFrame
 {
 public:
     MainFrame();
+    SchematicCanvas* Canvas() const { return m_canvas; }
 
 private:
     // ---- 界面构建 ----

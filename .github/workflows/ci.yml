@@ -1,0 +1,155 @@
+name: Cloud build and acceptance
+
+'on':
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  windows:
+    name: Windows MSVC build and core tests
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Prepare evidence directory
+        run: New-Item -ItemType Directory -Force ci-artifacts | Out-Null
+      - uses: actions/cache@v4
+        id: wx-cache
+        with:
+          path: .deps/wxWidgets-3.2.12
+          key: windows2022-wx3.2.12-static-x64-v143-release-v1
+      - name: Download pinned official wxWidgets source
+        if: steps.wx-cache.outputs.cache-hit != 'true'
+        run: |
+          New-Item -ItemType Directory -Force .deps | Out-Null
+          $archive = "$env:RUNNER_TEMP\wxWidgets-3.2.12.zip"
+          Invoke-WebRequest https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.12/wxWidgets-3.2.12.zip -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '1f7ec935dddbba5cf454795dc255ef1e21c668533f5a5951a6034f2949c80433') { throw 'wxWidgets archive checksum mismatch' }
+          Expand-Archive $archive -DestinationPath .deps -Force
+      - name: Locate wxWidgets source
+        run: |
+          $makefile = Get-ChildItem .deps -Recurse -Filter makefile.vc | Where-Object { $_.FullName -match '[\\/]build[\\/]msw[\\/]makefile.vc$' } | Select-Object -First 1
+          if (!$makefile) { throw 'wxWidgets source layout missing' }
+          $wxroot = Split-Path (Split-Path (Split-Path $makefile.FullName))
+          "WXWIN=$wxroot" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "wxWidgets source: $wxroot" | Tee-Object ci-artifacts/wx-source.log
+      - name: Compile wxWidgets with the Visual Studio toolchain
+        if: steps.wx-cache.outputs.cache-hit != 'true'
+        run: |
+          cmd /c tools\install_wx_windows.cmd 2>&1 | Tee-Object ci-artifacts/wx-build.log
+          if ($LASTEXITCODE -ne 0) { throw "wxWidgets build failed: $LASTEXITCODE" }
+      - name: Build original Visual Studio solution
+        id: solution
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (!$msbuild) { throw 'MSBuild not found' }
+          & $msbuild SchematicEditor.sln /m:2 /p:Configuration=Release /p:Platform=x64 "/p:WXWIN=$env:WXWIN" /bl:ci-artifacts/visual-studio.binlog 2>&1 | Tee-Object ci-artifacts/visual-studio-build.log
+          if ($LASTEXITCODE -ne 0) { throw "Visual Studio build failed: $LASTEXITCODE" }
+      - name: Configure and build tests with MSVC
+        id: build
+        if: ${{ always() && steps.solution.outcome == 'success' }}
+        run: |
+          cmake -S . -B build-ci -A x64 "-DwxWidgets_ROOT_DIR=$env:WXWIN" "-DwxWidgets_LIB_DIR=$env:WXWIN\lib\vc_x64_lib" -DwxWidgets_USE_STATIC=ON -DwxWidgets_CONFIGURATION=mswu 2>&1 | Tee-Object ci-artifacts/configure.log
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+          cmake --build build-ci --config Release --parallel 2 2>&1 | Tee-Object ci-artifacts/build.log
+          if ($LASTEXITCODE -ne 0) { throw 'CMake build failed' }
+          & .\build-ci\Release\schematic-cli.exe --version | Tee-Object ci-artifacts/version.log
+      - name: Execute core, digital logic and regression tests
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        run: |
+          ctest --test-dir build-ci -C Release -LE gui -V --output-junit "$PWD/ci-artifacts/core-junit.xml" 2>&1 | Tee-Object ci-artifacts/core-tests.log
+          if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
+          python tools/assert_junit.py ci-artifacts/core-junit.xml core simulation editing_regression
+          if ($LASTEXITCODE -ne 0) { throw 'Tests absent, skipped or failed' }
+      - name: Collect exact-revision binaries and test evidence
+        if: always()
+        run: python tools/collect_ci_artifacts.py --platform windows
+      - name: Upload Windows products and evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ci-artifacts/
+            dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  ubuntu:
+    name: Ubuntu build, native GUI and KiCad import
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install compiler and real virtual desktop dependencies
+        run: |
+          set -o pipefail
+          mkdir -p ci-artifacts
+          sudo apt-get update 2>&1 | tee ci-artifacts/apt-update.log
+          sudo apt-get install --no-install-recommends -y build-essential cmake libwxgtk3.2-dev python3 xvfb xauth xdotool openbox dbus-x11 scrot fonts-noto-cjk 2>&1 | tee ci-artifacts/build-dependencies.log
+      - name: Configure and compile the application and tests
+        id: build
+        run: |
+          set -o pipefail
+          cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Release 2>&1 | tee ci-artifacts/configure.log
+          cmake --build build-ci --parallel 4 2>&1 | tee ci-artifacts/build.log
+          ./build-ci/schematic-cli --version | tee ci-artifacts/version.log
+      - name: Execute core, digital logic and regression tests
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          ctest --test-dir build-ci -LE gui -V --output-junit "$PWD/ci-artifacts/core-junit.xml" 2>&1 | tee ci-artifacts/core-tests.log
+          python3 tools/assert_junit.py ci-artifacts/core-junit.xml core simulation editing_regression
+      - name: Execute native mouse and keyboard GUI tests with screenshots
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        run: xvfb-run -a -s '-screen 0 1600x1000x24 -nolisten tcp' dbus-run-session -- bash tools/run_gui_ci.sh
+      - name: Install actual KiCad and footprint libraries
+        id: kicad-deps
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          sudo apt-get install --no-install-recommends -y kicad kicad-footprints python3-wxgtk4.0 python3-pyatspi at-spi2-core libatk-adaptor 2>&1 | tee ci-artifacts/kicad-dependencies.log
+          dpkg-query -W kicad kicad-footprints | tee ci-artifacts/kicad-version.log
+      - name: Import exported netlist through the real KiCad GUI and verify every pad
+        if: ${{ always() && steps.build.outcome == 'success' && steps.kicad-deps.outcome == 'success' }}
+        env:
+          NO_AT_BRIDGE: '0'
+          GTK_MODULES: gail:atk-bridge
+        run: xvfb-run -a -s '-screen 0 1600x1000x24 -nolisten tcp' dbus-run-session -- bash tools/run_kicad_ci.sh
+      - name: Collect exact-revision binaries, source and evidence
+        if: always()
+        run: python3 tools/collect_ci_artifacts.py --platform ubuntu
+      - name: Upload Ubuntu products and actual test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ubuntu-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: |
+            ci-artifacts/
+            dist/
+          if-no-files-found: error
+          retention-days: 14

@@ -31,3 +31,8 @@ components.xml
 Thumbs.db
 desktop.ini
 .DS_Store
+# Cloud build and test evidence
+build-*/
+ci-artifacts/
+dist/
+.deps/
