@@ -444,6 +444,18 @@ void MainFrame::CreateMenus()
 
     menuBar->Append(helpMenu, L"帮助(&H)");
 
+    // Keep planned commands visible, but do not advertise a working operation.
+    for (int id : {ID_PLACE_COMPONENT, ID_PLACE_RESISTOR, ID_PLACE_CAPACITOR,
+        ID_PLACE_INDUCTOR, ID_PLACE_DIODE, ID_PLACE_LED, ID_PLACE_NPN, ID_PLACE_PNP,
+        ID_PLACE_OPAMP, ID_PLACE_BUS, ID_PLACE_JUNCTION, ID_PLACE_NET_LABEL,
+        ID_PLACE_GLOBAL_LABEL, ID_PLACE_POWER, ID_PLACE_GND, ID_PLACE_NOCONNECT,
+        ID_TOOLS_ANNOTATE, ID_TOOLS_ASSIGN_FOOTPRINTS, ID_TOOLS_GENERATE_BOM,
+        ID_PREF_GENERAL, ID_PREF_GRID, ID_PREF_HOTKEYS, ID_PREF_PATHS,
+        ID_HELP_DOCUMENTATION, ID_HELP_SHORTCUTS}) {
+        if (auto* item = menuBar->FindItem(id)) {
+            item->SetItemLabel(item->GetItemLabelText() + L"（待实现）"); item->Enable(false);
+        }
+    }
     SetMenuBar(menuBar);
 
     // ========================================================

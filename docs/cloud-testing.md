@@ -31,8 +31,17 @@ Models may be named explicitly in the library editor or instance properties.
 `truth` tables contain row-major bits without spaces: first input is the low bit,
 rows increment from zero, outputs follow pin order. A two-input XOR is `0110`.
 Version 1.1 designs preserve model/table/delay/clock period; version 1.0 remains
-readable. Unsupported future versions are rejected. Design and library saves use
+readable. Unsupported future versions, duplicate IDs/references, colliding pin
+positions and invalid wire geometry are rejected before replacing a document. Design and library saves use
 a temporary output and commit only after successful XML serialization.
 
 Future changes must add focused regressions, be pushed, and have actual cloud results
 reviewed. A YAML file or screenshot alone is not acceptance.
+
+Geometry edits first try preserving existing orthogonal paths, then reroute chains
+without obsolete degree-two bends. A candidate is accepted only if the partition
+of all existing terminals into electrical nets is unchanged. Crowded edits that
+would create a short or disconnection are cancelled with a status message. This
+is a bounded connection-maintenance operation, not a general PCB autorouter.
+Planned menu commands are disabled and marked pending; existing library-tree
+placement and working commands remain available.

@@ -2704,6 +2704,7 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
 
             PushUndo(L"修改元件值");
             comp.value = value;
+            m_netsDirty = true; // Label values determine electrical net identity.
             Touch();
             GetNetGraph();
             Refresh();

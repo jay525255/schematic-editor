@@ -50,7 +50,7 @@ int main(int argc,char** argv){try{
     se::NetGraph conflict;conflict.nets.resize(1);conflict.pinNet={{0},{0}};
     require(timed.Reset({source,high},conflict,error)&&timed.Value(0)==2,"conflicting drivers are reported explicitly");
     auto custom=component(L"与门",3);custom.name=L"自定义逻辑";custom.logicModel="truth";custom.truthTable="0110";custom.delayTicks=4;
-    auto a=source,b=source;a.id=1;b.id=2;a.value="1";b.value="0";
+    auto a=source,b=source;a.id=1;b.id=2;a.refdes="IN1";b.refdes="IN2";a.value="1";b.value="0";
     se::NetGraph tg;tg.nets.resize(3);tg.pinNet={{0},{1},{0,1,2}};
     se::SchematicDocument doc;doc.components={a,b,custom};
     const auto path=wxFileName(wxString::FromUTF8(argv[2]),"temporal-roundtrip.ses").GetFullPath();
@@ -69,6 +69,9 @@ int main(int argc,char** argv){try{
     require(restored&&restored->truthTable=="0110"&&restored->delayTicks==4&&restored->clockPeriodTicks==12,"library preserves truth table and timing");
     def.truthTable="bad";category.items={def};require(!se::ComponentCatalog::SaveUserLibrary({category},&error),"invalid library truth table cannot overwrite saved data");
     require(se::ComponentCatalog::Reload(&error)&&se::ComponentCatalog::Find(def.name)->truthTable=="0110","rejected save preserves previous library");
+    const auto* kept=se::ComponentCatalog::Find(def.name);
+    require(se::SchematicIO::WriteTextFile(se::ComponentCatalog::GetLibraryPath(),"<wrong-root/>",&error),"prepare invalid library root");
+    require(!se::ComponentCatalog::Reload(&error)&&se::ComponentCatalog::Find(def.name)==kept&&kept->truthTable=="0110","failed library reload preserves definitions and UI pointers");
     se::Simulator facade;require(facade.StartRuntime(chain,graph,error),"runtime facade starts");
     facade.AdvanceRuntime();auto t=facade.RuntimeTime();facade.SetRunning(false);
     require(facade.RuntimeTime()==t&&facade.RuntimeReady(),"pause preserves timeline state");

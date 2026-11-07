@@ -34,5 +34,16 @@ int main(int argc,char** argv) { try {
     const auto future=wxFileName(wxString::FromUTF8(argv[2]),"future.ses").GetFullPath();
     require(se::SchematicIO::WriteTextFile(future,"<schematic version=\"99.0\"/>",&error),"prepare unsupported future design");
     require(!se::SchematicIO::Load(future,reopened,&error)&&reopened.components.size()==1,"unsupported version cannot replace current document");
+    auto invalid=d;invalid.components.push_back(invalid.components[0]);
+    require(!se::SchematicIO::Save(path,invalid,&error),"invalid duplicate IDs cannot overwrite a saved design");
+    require(se::SchematicIO::Load(path,reopened,&error)&&reopened.components.size()==1,"rejected save leaves original design readable");
+    const auto bad=wxFileName(wxString::FromUTF8(argv[2]),"bad.ses").GetFullPath();
+    require(se::SchematicIO::WriteTextFile(bad,"<schematic version=\"1.0\"><components><component id=\"oops\"/></components></schematic>",&error),"prepare malformed numeric fixture");
+    require(!se::SchematicIO::Load(bad,reopened,&error)&&reopened.components.size()==1,"malformed file leaves current document intact");
+    auto label=component(L"网络标签",10);label.value="SHARED";auto label2=label;label2.id=11;label2.refdes="L11";label2.pos={200,0};
+    auto labels=se::NetBuilder::Build({label,label2},{});
+    require(labels.pinNet[0][0]==labels.pinNet[1][0],"same explicit labels merge electrical nets");
+    label2.value="OTHER";labels=se::NetBuilder::Build({label,label2},{});
+    require(labels.pinNet[0][0]!=labels.pinNet[1][0],"different labels preserve separate nets");
     return 0;
 } catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;} }

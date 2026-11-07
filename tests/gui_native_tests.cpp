@@ -42,6 +42,7 @@ int main(int argc,char**argv){
     try{
         se::ComponentCatalog::SetLibraryPath(wxFileName(out,"components.xml").GetFullPath());
         wxUIActionSimulator native;input=&native;frame=new se::MainFrame;frame->Show();frame->Raise();pump(700);
+        check(!frame->GetMenuBar()->IsEnabled(se::ID_PLACE_BUS)&&!frame->GetMenuBar()->IsEnabled(se::ID_TOOLS_GENERATE_BOM)&&frame->GetMenuBar()->IsEnabled(se::ID_PLACE_WIRE),"planned menu commands are disabled and working commands stay enabled");
         auto* canvas=frame->Canvas();auto* tree=dynamic_cast<wxTreeCtrl*>(frame->FindWindow(se::ID_LIBRARY_TREE));check(tree,"library tree is real and accessible");
         wxTreeItemIdValue catCookie,leafCookie;auto cat=tree->GetFirstChild(tree->GetRootItem(),catCookie);auto leaf=tree->GetFirstChild(cat,leafCookie);
         auto selectGate=[&]{wxRect r;tree->EnsureVisible(leaf);pump();check(tree->GetBoundingRect(leaf,r,true),"gate row visible");click(tree,r.GetPosition()+wxPoint(10,r.height/2));check(canvas->GetPendingComponent()!=nullptr,"native selection activates placement");};

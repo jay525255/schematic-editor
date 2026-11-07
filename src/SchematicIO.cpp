@@ -6,6 +6,8 @@
 #include <wx/wfstream.h>
 
 #include "ComponentCatalog.h"
+#include <cmath>
+#include <set>
 
 namespace se
 {
@@ -113,6 +115,60 @@ void SetError(wxString* error, const wxString& message)
         *error = message;
 }
 
+bool ValidateDocument(const SchematicDocument& doc, wxString* error)
+{
+    auto reject = [&](const wxString& reason) { SetError(error, reason); return false; };
+    auto coordinate = [](const wxPoint& p) { return p.x >= -1000000 && p.x <= 1000000 && p.y >= -1000000 && p.y <= 1000000; };
+    if (doc.gridStep < 1 || doc.gridStep > 1000 || !std::isfinite(doc.zoom) || doc.zoom < 0.05 || doc.zoom > 8)
+        return reject(L"视图参数不合法");
+    std::set<int> componentIds, wireIds; std::set<wxString> references;
+    for (const auto& comp : doc.components) {
+        if (comp.id <= 0 || comp.id > 1000000 || !componentIds.insert(comp.id).second || comp.refdes.empty() || !references.insert(comp.refdes).second)
+            return reject(L"元件ID或位号为空/重复，请在原文件中修正后重新打开");
+        if (comp.name.empty() || comp.w < 1 || comp.h < 1 || comp.w > 10000 || comp.h > 10000 || !coordinate(comp.pos) || comp.xform < 0 || comp.xform > 7)
+            return reject(L"元件名称、尺寸、坐标或旋转参数不合法");
+        if (comp.pins.empty()) return reject(L"元件缺少引脚定义");
+        std::set<int> numbers; std::set<std::pair<int,int>> positions;
+        for (size_t k = 0; k < comp.pins.size(); ++k) {
+            const auto& pin = comp.pins[k];
+            if (pin.name.empty() || pin.number < 1 || !numbers.insert(pin.number).second || pin.count < 1 || pin.count > 64 || pin.slot < 0 || pin.slot >= pin.count)
+                return reject(L"引脚名称、编号或布局参数不合法");
+            auto at = PinPosition(comp, static_cast<int>(k));
+            if (!positions.insert({at.x, at.y}).second) return reject(L"同一元件多个引脚位置重叠");
+        }
+        if (comp.delayTicks < 1 || comp.delayTicks > 1000 || comp.clockPeriodTicks < 2 || comp.clockPeriodTicks > 10000 || comp.clockPeriodTicks % 2)
+            return reject(L"数字仿真时间参数不合法");
+    }
+    for (const auto& wire : doc.wires)
+        if (wire.id <= 0 || wire.id > 1000000 || !wireIds.insert(wire.id).second || !wire.IsAxisAligned() || wire.a == wire.b || !coordinate(wire.a) || !coordinate(wire.b))
+            return reject(L"导线ID重复、坐标不合法或存在斜线/零长导线");
+    for (const auto& text : doc.texts)
+        if (!coordinate(text.pos) || text.pointSize < 1 || text.pointSize > 200)
+            return reject(L"注记位置或字号不合法");
+    return true;
+}
+
+// Reject malformed numeric fields before the legacy default helpers can hide them.
+bool ValidateXmlNumbers(const wxXmlNode* node, wxString* error)
+{
+    std::set<wxString> fields;
+    const auto name = node->GetName();
+    if (name == "component") fields = {"id","x","y","w","h","xform","delayTicks","clockPeriodTicks"};
+    else if (name == "pin") fields = {"slot","count","number"};
+    else if (name == "wire") fields = {"id","x1","y1","x2","y2"};
+    else if (name == "text") fields = {"x","y","size"};
+    else if (name == "view") fields = {"gridStep"};
+    for (const auto& key : fields) {
+        wxString value; long number;
+        if (node->GetAttribute(key, &value) && (!value.ToLong(&number) || number < -1000000 || number > 1000000)) {
+            SetError(error, L"数值字段不合法：" + name + "." + key); return false;
+        }
+    }
+    for (const auto* child = node->GetChildren(); child; child = child->GetNext())
+        if (child->GetType() == wxXML_ELEMENT_NODE && !ValidateXmlNumbers(child, error)) return false;
+    return true;
+}
+
 } // namespace
 
 // ============================================================
@@ -135,6 +191,7 @@ wxString SchematicIO::NetlistWildcard()
 
 bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxString* error)
 {
+    if (!ValidateDocument(doc, error)) return false;
     wxXmlDocument xml;
     xml.SetFileEncoding(L"UTF-8");
 
@@ -288,6 +345,7 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
     if (version != "1.0" && version != "1.1") {
         SetError(error, L"不支持的文件版本：" + version); return false;
     }
+    if (!ValidateXmlNumbers(root, error)) return false;
     SchematicDocument loaded;
 
     for (wxXmlNode* section = root->GetChildren(); section; section = section->GetNext())
@@ -337,9 +395,6 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
                 comp.delayTicks = GetIntAttr(node, "delayTicks", 1);
                 comp.clockPeriodTicks = GetIntAttr(node, "clockPeriodTicks", 10);
 
-                if (comp.xform < 0 || comp.xform > 7)
-                    comp.xform = 0;
-
                 if (comp.footprint.IsEmpty() && comp.value.IsEmpty())
                 {
                     if (const ComponentDef* def = ComponentCatalog::Find(comp.name))
@@ -372,7 +427,8 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
 
                 // 引脚定义缺失时兜底：按名字重建（老文件 / 手写文件容错）
                 if (comp.pins.empty())
-                    comp.pins = MakePins(comp.name, ComponentKind::Logic, 0, 1);
+                    if (const auto* def = ComponentCatalog::Find(comp.name))
+                        comp.pins = MakePins(comp.name, def->kind, def->inputs, def->outputs);
 
                 loaded.components.push_back(comp);
             }
@@ -414,6 +470,7 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
         }
     }
 
+    if (!ValidateDocument(loaded, error)) return false;
     doc = loaded;
     return true;
 }

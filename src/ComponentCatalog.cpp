@@ -111,6 +111,9 @@ bool ParseLibraryFile(const wxString& path, std::vector<CategoryDef>& out, wxStr
         return false;
     }
 
+    if (root->GetName() != "ComponentLibrary" || root->GetAttribute("version", "1") != "1") {
+        SetError(error, L"元件库根节点或版本不受支持"); return false;
+    }
     std::vector<CategoryDef> cats;
 
     for (wxXmlNode* catNode = root->GetChildren(); catNode; catNode = catNode->GetNext())

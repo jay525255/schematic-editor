@@ -47,16 +47,40 @@ bool ReconnectChangedComponents(const std::vector<ComponentInstance>& before,
     }
     const auto oldGraph=NetBuilder::Build(before,wires);
     auto destination=[&](const wxPoint& p){auto i=targets.find(key(p));return i==targets.end()?p:i->second.front();};
-    // Try both elbow orientations; never accept a new short or disconnected pin.
-    for(int alternate=0;alternate<2;++alternate) {
+    // Remove obsolete degree-two bends as an alternative. A mirrored terminal
+    // can occupy a former bend, so retaining that bend can create an unintended T.
+    std::map<Position,std::vector<size_t>> adjacent;
+    for(size_t i=0;i<pieces.size();++i){adjacent[key(pieces[i].a)].push_back(i);adjacent[key(pieces[i].b)].push_back(i);}
+    std::vector<bool> visited(pieces.size(),false);
+    std::vector<Wire> chains;
+    for(const auto& item:adjacent) {
+        if(item.second.size()==2&&!targets.count(item.first))continue;
+        for(size_t edge:item.second) {
+            if(visited[edge])continue;
+            wxPoint start(item.first.first,item.first.second),at=start;size_t current=edge;
+            while(true) {
+                visited[current]=true;const auto& part=pieces[current];
+                at=part.a==at?part.b:part.a;
+                const auto& next=adjacent[key(at)];
+                if(next.size()!=2||targets.count(key(at)))break;
+                auto following=next[0]==current?next[1]:next[0];
+                if(visited[following])break;current=following;
+            }
+            if(start!=at)chains.push_back({pieces[edge].id,start,at});
+        }
+    }
+    for(size_t i=0;i<pieces.size();++i)if(!visited[i])chains.push_back(pieces[i]);
+    // Try preserved paths first, then reroute chains without obsolete bends.
+    // Every accepted candidate must retain the entire terminal partition.
+    for(int alternate=0;alternate<4;++alternate) {
         std::vector<Wire> candidate;int id=nextId;
         auto route=[&](wxPoint a,wxPoint b,int originalId,bool horizontal){
             if(a==b)return;
             if(a.x==b.x||a.y==b.y){candidate.push_back({originalId,a,b});return;}
-            auto bend=(horizontal!=bool(alternate))?wxPoint(b.x,a.y):wxPoint(a.x,b.y);
+            auto bend=(horizontal!=bool(alternate%2))?wxPoint(b.x,a.y):wxPoint(a.x,b.y);
             candidate.push_back({originalId,a,bend});candidate.push_back({++id,bend,b});
         };
-        for(const auto& part:pieces)route(destination(part.a),destination(part.b),part.id,part.a.y==part.b.y);
+        for(const auto& part:(alternate<2?pieces:chains))route(destination(part.a),destination(part.b),part.id,part.a.y==part.b.y);
         for(const auto& item:targets)for(size_t k=1;k<item.second.size();++k)
             route(item.second.front(),item.second[k],++id,true);
         if(sameTerminals(oldGraph,NetBuilder::Build(after,candidate))) {wires=std::move(candidate);return true;}
