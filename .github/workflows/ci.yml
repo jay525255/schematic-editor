@@ -8,10 +8,6 @@ name: Cloud build and acceptance
 permissions:
   contents: read
 
-concurrency:
-  group: cloud-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
 defaults:
   run:
     shell: bash
@@ -33,8 +29,8 @@ jobs:
       - uses: actions/cache/restore@v4
         id: wx-cache
         with:
-          path: .deps/wxWidgets-3.2.12
-          key: windows2022-wx3.2.12-static-x64-v143-release-v1
+          path: .deps
+          key: windows2022-wx3.2.12-static-x64-v143-release-v2
       - name: Download pinned official wxWidgets source
         if: steps.wx-cache.outputs.cache-hit != 'true'
         run: |
@@ -59,8 +55,8 @@ jobs:
         if: steps.wx-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: .deps/wxWidgets-3.2.12
-          key: windows2022-wx3.2.12-static-x64-v143-release-v1
+          path: .deps
+          key: windows2022-wx3.2.12-static-x64-v143-release-v2
       - name: Build original Visual Studio solution
         id: solution
         run: |

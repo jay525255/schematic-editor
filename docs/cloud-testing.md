@@ -13,7 +13,8 @@ screenshot when a display is available. A missing display/dependency is an error
 Artifacts expire after 14 days; download a validated run for longer retention.
 
 Acceptance covers file round trips, globally unique references, dense-pin rejection,
-connected multi-selection/interior-pin/branch movement, gate and adder truth tables,
+connected multi-selection/interior-pin/branch movement, connected rotation/mirroring,
+atomic rejection of topology-changing geometry edits, gate and adder truth tables,
 and timed propagation. Temporal scenarios assert accumulated gate delays, live input
 changes, short-pulse cancellation, independent automatic clocks, conflicting drivers,
 and persisted custom truth tables. Native GUI checks operate real menus, shortcuts,

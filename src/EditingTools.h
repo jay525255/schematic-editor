@@ -1,8 +1,11 @@
 #pragma once
 #include "NetModel.h"
 namespace se {
-// Keep logical terminals connected while changing their world positions.
-// The operation splits wires at existing junctions before creating orthogonal paths.
-void MoveConnectedComponents(std::vector<ComponentInstance>& components,
+// Reconnect matching terminal indices after a geometric edit. Returns false if
+// orthogonal routing would change which original terminals share a network.
+// On failure, wires are left unchanged. Callers keep the original components.
+bool ReconnectChangedComponents(const std::vector<ComponentInstance>& before,
+    const std::vector<ComponentInstance>& after, std::vector<Wire>& wires);
+bool MoveConnectedComponents(std::vector<ComponentInstance>& components,
     std::vector<Wire>& wires, const std::vector<int>& selected, const wxPoint& delta);
 }

@@ -56,6 +56,11 @@ int main(int argc,char**argv){
         check(canvas->GetComponents()[0].pos!=original&&connected(),"drag retains intended connection");
         key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[0].pos==original&&connected(),"undo restores geometry and connection");
         key('Y',wxMOD_CONTROL);check(canvas->GetComponents()[0].pos!=original&&connected(),"redo restores moved geometry");key('Z',wxMOD_CONTROL);
+        click(canvas,canvas->ScreenPoint(original+wxPoint(30,20)));
+        auto oldTransform=canvas->GetComponents()[0].xform;
+        key('R',wxMOD_CONTROL);check(canvas->GetComponents()[0].xform!=oldTransform&&connected(),"native rotation preserves attached wire network");
+        key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[0].xform==oldTransform&&connected(),"undo restores rotation and wiring together");
+        key('H',wxMOD_CONTROL);check(canvas->GetComponents()[0].xform!=oldTransform&&connected(),"native flip preserves attached wire network");key('Z',wxMOD_CONTROL);
         check(screenshot("editing.png"),"save actual editing screenshot");
         key('A',wxMOD_CONTROL);key('C',wxMOD_CONTROL);key('V',wxMOD_CONTROL);check(canvas->GetComponentCount()==4,"native copy paste adds independent instances");key('Z',wxMOD_CONTROL);
         auto saved=wxFileName(out,"native-roundtrip.ses").GetFullPath();fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'S',saved);

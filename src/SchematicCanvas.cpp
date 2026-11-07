@@ -2077,7 +2077,8 @@ void SchematicCanvas::UpdateDrag(const wxPoint& world)
     if (!m_dragMoved) { PushUndo(L"移动元件及连接线"); m_dragMoved = true; }
     m_components = m_dragBaseComponents;
     m_wires = m_dragBaseWires;
-    MoveConnectedComponents(m_components, m_wires, m_selComponents, delta);
+    if (!MoveConnectedComponents(m_components, m_wires, m_selComponents, delta) && OnStatusMessage)
+        OnStatusMessage(L"移动已取消：当前位置会改变网络连接，请换一个位置");
     for (const auto& wire : m_wires) m_nextWireId = std::max(m_nextWireId, wire.id);
     m_selWires.clear();
     m_netsDirty = true;
@@ -2680,8 +2681,11 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
                 return true;
 
             const wxPoint delta = target - comp.pos;
+            auto components = m_components; auto wires = m_wires;
+            if (!MoveConnectedComponents(components, wires, { index }, delta))
+                return Reject(L"移动会改变网络连接，已取消；请换一个位置");
             PushUndo(L"移动元件");
-            MoveConnectedComponents(m_components, m_wires, { index }, delta);
+            m_components = std::move(components); m_wires = std::move(wires);
             for (const auto& wire : m_wires) m_nextWireId = std::max(m_nextWireId, wire.id);
             m_selWires.clear();
             m_netsDirty = true;
@@ -2848,132 +2852,21 @@ void SchematicCanvas::TransformSelection(const std::function<void(ComponentInsta
         return;
     }
 
+    auto after = m_components;
+    for (int ci : m_selComponents)
+        if (ci >= 0 && ci < static_cast<int>(after.size())) apply(after[ci]);
+    auto wires = m_wires;
+    if (!ReconnectChangedComponents(m_components, after, wires)) {
+        if (OnStatusMessage) OnStatusMessage(L"变换已取消：当前位置会导致网络短接或断开，请先移到空白区域");
+        return;
+    }
     PushUndo(label);
-
-    // ---- 1. 先记下"哪些导线端点正贴在选中元件的引脚上" ----
-    //  这里记引脚**名字**而不是下标：变换之后引脚会按新位置重新排序，
-    //  下标会指到别的引脚上去。
-    struct Attach
-    {
-        int      wire  = -1;
-        int      end   = 0;      // 0 = a 端，1 = b 端
-        int      comp  = -1;
-        wxString pin;
-    };
-
-    std::vector<Attach> attach;
-
-    for (int ci : m_selComponents)
-    {
-        if (ci < 0 || ci >= static_cast<int>(m_components.size()))
-            continue;
-
-        const ComponentInstance& comp = m_components[ci];
-
-        for (size_t k = 0; k < comp.pins.size(); ++k)
-        {
-            const wxPoint pinPos = PinPosition(comp, static_cast<int>(k));
-
-            for (size_t wi = 0; wi < m_wires.size(); ++wi)
-            {
-                if (m_wires[wi].a == pinPos)
-                {
-                    Attach item;
-                    item.wire = static_cast<int>(wi);
-                    item.end  = 0;
-                    item.comp = ci;
-                    item.pin  = comp.pins[k].name;
-                    attach.push_back(item);
-                }
-
-                if (m_wires[wi].b == pinPos)
-                {
-                    Attach item;
-                    item.wire = static_cast<int>(wi);
-                    item.end  = 1;
-                    item.comp = ci;
-                    item.pin  = comp.pins[k].name;
-                    attach.push_back(item);
-                }
-            }
-        }
-    }
-
-    // ---- 2. 变换元件本体（引脚位置、朝向随之重算）----
-    for (int ci : m_selComponents)
-    {
-        if (ci >= 0 && ci < static_cast<int>(m_components.size()))
-            apply(m_components[ci]);
-    }
-
-    // ---- 3. 让导线端点跟着引脚走 ----
-    //  只有"跟过去之后这条导线仍然是水平/竖直"才搬端点；
-    //  否则宁可让导线留在原地（视觉上断开，用户能看出来要重连），也不画斜线。
-    int followed = 0;
-    int kept     = 0;
-
-    for (const Attach& item : attach)
-    {
-        if (item.wire < 0 || item.wire >= static_cast<int>(m_wires.size()))
-            continue;
-
-        ComponentInstance& comp = m_components[item.comp];
-
-        int pinIndex = -1;
-
-        for (size_t k = 0; k < comp.pins.size(); ++k)
-        {
-            if (comp.pins[k].name == item.pin)
-            {
-                pinIndex = static_cast<int>(k);
-                break;
-            }
-        }
-
-        if (pinIndex < 0)
-            continue;
-
-        Wire&   wire   = m_wires[item.wire];
-        wxPoint& moved = (item.end == 0) ? wire.a : wire.b;
-        const wxPoint other = (item.end == 0) ? wire.b : wire.a;   // 另一端固定不动
-        const wxPoint fresh = PinPosition(comp, pinIndex);
-
-        if (moved == fresh)
-        {
-            ++followed;      // 转 180° 之类，引脚其实没动
-            continue;
-        }
-
-        if (other.x == fresh.x || other.y == fresh.y)
-        {
-            moved = fresh;
-            ++followed;
-        }
-        else
-        {
-            ++kept;
-        }
-    }
-
-    m_netsDirty    = true;
-    m_highlightNet = -1;
-    Touch();
-
-    GetNetGraph();
-
-    if (OnStatusMessage)
-    {
-        wxString text = wxString::Format(L"%s：%d 个元件", label,
-                                         static_cast<int>(m_selComponents.size()));
-
-        if (followed > 0)
-            text += wxString::Format(L"，%d 个导线端点跟随", followed);
-
-        if (kept > 0)
-            text += wxString::Format(L"，%d 个导线端点留在原位（跟过去会变成斜线）", kept);
-
-        OnStatusMessage(text);
-    }
+    m_components = std::move(after);
+    m_wires = std::move(wires);
+    for (const auto& wire : m_wires) m_nextWireId = std::max(m_nextWireId, wire.id);
+    m_selWires.clear();
+    m_netsDirty = true; m_highlightNet = -1; Touch(); GetNetGraph();
+    if (OnStatusMessage) OnStatusMessage(label + L"：元件与连接线已一起更新");
 
     NotifySelectionChanged();
 

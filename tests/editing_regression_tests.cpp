@@ -32,5 +32,23 @@ int main(int argc,char**argv){try{
     cs={a,b};ws={{1,{-180,0},{100,0}}};se::MoveConnectedComponents(cs,ws,{0},{0,40});connected(cs,ws,0,1);
     auto fixed=terminal(2,{10,-20},false),third=terminal(3,{10,80},false);
     cs={a,fixed,third};ws={{1,se::PinPosition(a,0),{0,0}},{2,{0,0},{0,100}}};se::MoveConnectedComponents(cs,ws,{0},{0,40});connected(cs,ws,0,1);connected(cs,ws,0,2);
+    auto left=terminal(1,{-250,-10},true),bottom=terminal(2,{-250,10},true),right=terminal(4,{200,0},false);
+    auto gate=component(L"与门",3,{0,0});
+    cs={left,bottom,gate,right};
+    ws={{1,se::PinPosition(left,0),se::PinPosition(gate,0)},
+        {2,se::PinPosition(bottom,0),se::PinPosition(gate,1)},
+        {3,se::PinPosition(gate,2),se::PinPosition(right,0)}};
+    const auto before=cs;const auto oldGraph=se::NetBuilder::Build(cs,ws);
+    se::RotateComponent(cs[2],1);
+    require(se::ReconnectChangedComponents(before,cs,ws),"rotation reconnects every terminal with orthogonal paths");
+    auto newGraph=se::NetBuilder::Build(cs,ws);
+    for(size_t a=0;a<cs.size();++a)for(size_t p=0;p<cs[a].pins.size();++p)
+      for(size_t b=0;b<cs.size();++b)for(size_t q=0;q<cs[b].pins.size();++q)
+        require((oldGraph.pinNet[a][p]==oldGraph.pinNet[b][q])==(newGraph.pinNet[a][p]==newGraph.pinNet[b][q]),"rotation preserves network identity without introducing shorts");
+    auto rotated=cs;se::MirrorComponent(cs[2],true);
+    require(se::ReconnectChangedComponents(rotated,cs,ws),"mirroring maintains connected terminals");
+    cs={a,b};ws.clear();auto oldPosition=cs[0].pos;
+    auto delta=se::PinPosition(cs[1],0)-se::PinPosition(cs[0],0);
+    require(!se::MoveConnectedComponents(cs,ws,{0},delta)&&cs[0].pos==oldPosition&&ws.empty(),"unsafe move onto an unrelated terminal is rejected atomically");
     return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;}}
