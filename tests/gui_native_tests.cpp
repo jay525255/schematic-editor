@@ -145,6 +145,9 @@ int main(int argc,char**argv){
         check(partition(*canvas)==importedPartition,"native imported resistor movement retains electrical connections");
         key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos==beforeMove&&partition(*canvas)==importedPartition,"undo restores imported symbol and wires");
         key('Y',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos!=beforeMove,"redo moves imported resistor");
+        // Undo/redo intentionally clears selection, so select the moved instance again.
+        click(canvas,canvas->ScreenPoint(wxPoint(11811,9398)+canvas->GetComponents()[resistor].pos-beforeMove));
+        check(canvas->GetSelectedComponentIndex()==static_cast<int>(resistor),"native mouse selects moved imported resistor for properties");
         auto* grid=propertyGrid(frame);check(grid,"real property grid found");
         auto* valueProperty=grid->GetPropertyByLabel(L"元件值");check(valueProperty,"imported value property visible");
         grid->EnsureVisible(valueProperty);pump();auto valueRect=grid->GetPropertyRect(valueProperty,valueProperty);
