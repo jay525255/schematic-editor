@@ -269,7 +269,9 @@ bool ImportKiCadSchematic(const wxString& path,KiCadImportResult& result,wxStrin
     error.clear();try {
         wxFile file(path);if(!file.IsOpened())throw std::runtime_error("Cannot open KiCad schematic");auto size=file.Length();if(size<=0||size>16*1024*1024)throw std::runtime_error("Empty schematic or file exceeds 16 MiB limit");
         std::string bytes(static_cast<size_t>(size),'\0');if(file.Read(bytes.data(),bytes.size())!=size)throw std::runtime_error("Cannot read schematic");if(bytes.find('\0')!=std::string::npos)throw std::runtime_error("NUL byte in schematic");W(bytes);
-        auto root=Parser(bytes).parse();auto imported=Converter(root).convert();result=std::move(imported);return true;
+        auto root=Parser(bytes).parse();auto imported=Converter(root).convert();
+        if(!SchematicIO::Validate(imported.document,&error)){error=L"KiCad 导入失败（工程数据限制）："+error;return false;}
+        result=std::move(imported);return true;
     }catch(const std::exception& e){error=L"KiCad 导入失败："+wxString::FromUTF8(e.what());return false;}
 }
 }

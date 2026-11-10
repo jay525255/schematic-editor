@@ -202,6 +202,11 @@ wxString SchematicIO::NetlistWildcard()
 //  保存
 // ============================================================
 
+bool SchematicIO::Validate(const SchematicDocument& doc, wxString* error)
+{
+    return ValidateDocument(doc,error);
+}
+
 bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxString* error)
 {
     if (!ValidateDocument(doc, error)) return false;

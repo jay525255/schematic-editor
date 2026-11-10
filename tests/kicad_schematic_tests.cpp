@@ -38,6 +38,8 @@ int main(int argc,char**argv){try{
         require(se::SchematicIO::WriteTextFile(bad,text,&error),"write malformed/unsupported regression fixture");require(!se::ImportKiCadSchematic(bad,held,error)&&!error.empty(),"invalid/unsupported file yields concrete diagnostic");require(topology(held.document)==original,"failed import leaves previous document unchanged");}
     require(se::SchematicIO::WriteTextFile(bad,"(kicad_sch (version 20250114) (lib_symbols) (wire (pts (xy 0 0) (xy 10 0))) (wire (pts (xy 5 0.004) (xy 15 0.004))))",&error),"write close parallel-wire precision regression");
     require(!se::ImportKiCadSchematic(bad,held,error)&&error.Contains("topology"),"reject rounding-induced shorts even without colliding endpoint coordinates");
+    require(se::SchematicIO::WriteTextFile(bad,"(kicad_sch (version 20250114) (lib_symbols) (rectangle (start 0 0) (end 2000 1)))",&error),"write oversized drawing regression");
+    require(!se::ImportKiCadSchematic(bad,held,error)&&!error.empty(),"reject an imported document that cannot be saved before replacing the canvas");
     require(!se::ImportKiCadSchematic(fixtures+"/dynamic-power-9.kicad_sch",held,error)&&error.Contains("sheet"),"real hierarchy rejected explicitly instead of dropping connections");
     return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;}}

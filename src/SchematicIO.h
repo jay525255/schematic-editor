@@ -77,6 +77,8 @@ public:
     static wxString SchematicWildcard();
     static wxString NetlistWildcard();
 
+    static bool Validate(const SchematicDocument& doc, wxString* error = nullptr);
+
     // 保存 / 加载 .ses
     static bool Save(const wxString& path, const SchematicDocument& doc, wxString* error = nullptr);
     static bool Load(const wxString& path, SchematicDocument& doc, wxString* error = nullptr);
