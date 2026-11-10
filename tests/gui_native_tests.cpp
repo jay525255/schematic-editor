@@ -5,6 +5,7 @@
 #include <set>
 #include <map>
 #include <wx/uiaction.h>
+#include <wx/propgrid/propgrid.h>
 #include <wx/dcscreen.h>
 #include <wx/dcmemory.h>
 #include <wx/filename.h>
@@ -45,6 +46,11 @@ bool differentScreenshots(const wxString& first,const wxString& second){
 void check(bool ok,const char* message){if(!ok){screenshot("failure.png");throw std::runtime_error(message);}std::cout<<"PASS "<<message<<std::endl;}
 void key(int code,int modifiers=wxMOD_NONE){check(input->Char(code,modifiers),"native keyboard delivered");pump();}
 void click(wxWindow* window,const wxPoint& pos){check(input->MouseMove(window->ClientToScreen(pos))&&input->MouseClick(),"native mouse delivered");pump();}
+wxPropertyGrid* propertyGrid(wxWindow* window) {
+    if(auto* grid=dynamic_cast<wxPropertyGrid*>(window))return grid;
+    for(auto* child:window->GetChildren())if(auto* grid=propertyGrid(child))return grid;
+    return nullptr;
+}
 using Partition=std::set<std::set<wxString>>;
 Partition partition(const se::SchematicCanvas& canvas) {
     const auto& cs=canvas.GetComponents(); const auto& ws=canvas.GetWires();
@@ -135,12 +141,20 @@ int main(int argc,char**argv){
         check(canvas->GetComponents()[resistor].pos!=beforeMove&&partition(*canvas)==importedPartition,"native imported resistor moves with electrical connections");
         key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos==beforeMove&&partition(*canvas)==importedPartition,"undo restores imported symbol and wires");
         key('Y',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos!=beforeMove,"redo moves imported resistor");
+        auto* grid=propertyGrid(frame);check(grid,"real property grid found");
+        auto* valueProperty=grid->GetPropertyByLabel(L"元件值");check(valueProperty,"imported value property visible");
+        grid->EnsureVisible(valueProperty);pump();auto valueRect=grid->GetPropertyRect(valueProperty,valueProperty);
+        click(grid,wxPoint(grid->GetSplitterPosition()+35,valueRect.y+valueRect.height/2));
+        key('A',wxMOD_CONTROL);check(input->Text("2k"),"native keyboard edits imported resistor value");key(WXK_RETURN);
+        check(canvas->GetComponents()[resistor].value=="2k","imported value change reaches real model");
+        canvas->SetFocus();pump();
         check(screenshot("kicad-edited.png"),"save edited KiCad screenshot");
         auto importedSave=wxFileName(out,"kicad-native-roundtrip.ses").GetFullPath();fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'S',importedSave);
         check(wxFileExists(importedSave)&&!canvas->IsModified(),"native save stores imported editable document");
         key('N',wxMOD_CONTROL);check(canvas->GetComponentCount()==0,"new clears imported document after save");
         fileCommand(wxMOD_CONTROL,'O',importedSave);
         check(canvas->GetComponentCount()==9&&partition(*canvas)==importedPartition,"native reopen preserves all imported electrical connections");
+        check(canvas->GetComponents()[resistor].value=="2k","native reopen retains edited KiCad parameter");
         check(screenshot("kicad-reopened.png")&&differentScreenshots("kicad-import.png","kicad-edited.png"),"actual imported editing and reopen screenshots captured");
         canvas->MarkSaved();frame->Destroy();pump();frame=nullptr;wxTheApp->OnExit();wxEntryCleanup();return 0;
     }catch(const std::exception& e){screenshot("failure.png");std::cerr<<"FAIL "<<e.what()<<std::endl;return 1;}

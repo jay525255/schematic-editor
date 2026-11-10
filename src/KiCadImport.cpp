@@ -143,7 +143,7 @@ class Converter {
             auto u=name.substr(previous+1,last-previous-1),s=name.substr(last+1);
             if((u=="0"||u==std::to_string(unit))&&(s=="0"||s==std::to_string(style))){contents(child);if(u==std::to_string(unit))matched=true;}
         }
-        if(!matched&&c.pins.empty()&&c.graphics.empty())throw std::runtime_error("Missing unit/body style in symbol: "+id);
+        if(!matched)throw std::runtime_error("Missing unit/body style in symbol: "+id);
         std::set<wxString> pads;for(const auto& p:c.pins)if(!pads.insert(p.pad).second)throw std::runtime_error("Stacked duplicate pad number not supported: "+c.refdes.utf8_string()+"."+p.pad.utf8_string());
         // Instance properties use absolute sheet coordinates, not the library transform.
         for(const auto& property:inst.children)if(property.list&&property.key()=="property"&&!hidden(property)&&property.find("at")){
@@ -151,7 +151,11 @@ class Converter {
         }
         int minX=world(t.origin).x-30,minY=world(t.origin).y-30,maxX=minX+60,maxY=minY+60;
         auto grow=[&](const wxPoint& p){minX=std::min(minX,p.x);minY=std::min(minY,p.y);maxX=std::max(maxX,p.x);maxY=std::max(maxY,p.y);};
-        for(const auto& p:c.pins){grow(p.endpoint);grow(p.anchor);}for(const auto& g:c.graphics)for(const auto& p:g.points)grow(p);
+        for(const auto& p:c.pins){grow(p.endpoint);grow(p.anchor);}
+        for(const auto& g:c.graphics) {
+            for(const auto& p:g.points)grow(p);
+            if(!g.text.empty()&&!g.points.empty()){int half=static_cast<int>(g.text.size()*g.textSize*0.65/2);grow(g.points[0]-wxPoint(half,g.textSize/2));grow(g.points[0]+wxPoint(half,g.textSize/2));}
+        }
         c.pos={minX,minY};c.w=std::max(1,maxX-minX);c.h=std::max(1,maxY-minY);
         if(c.w>100000||c.h>100000)throw std::runtime_error("Symbol bounding box exceeds supported size");
         for(auto& p:c.pins){p.endpoint-=c.pos;p.anchor-=c.pos;}for(auto& g:c.graphics)for(auto& p:g.points)p-=c.pos;
@@ -161,9 +165,9 @@ class Converter {
     void label(const Node& n) {
         electricalName(n.value());ComponentInstance c;c.imported=true;c.pcbExcluded=true;c.id=++componentId;c.name=n.key()=="global_label"?L"全局标签":L"网络标签";c.refdes=wxString::Format("#LABEL%d",c.id);
         while(refs.count(c.refdes))c.refdes+="_";refs.insert(c.refdes);c.value=W(n.value());c.netLabel=c.value;
-        auto at=terminal(xy(n.need("at")));c.pos=at;c.w=std::max(100,static_cast<int>(c.value.size())*80);c.h=140;
-        Pin p;p.name=c.value;p.number=1;p.exact=true;p.pad="1";p.anchor={0,0};p.endpoint={0,0};p.dir=PinDir::Passive;c.pins.push_back(p);
-        SymbolGraphic g;g.property="Value";g.textSize=textSize(n);g.points.push_back({c.w/2,-80});c.graphics.push_back(g);result.document.components.push_back(c);
+        auto at=terminal(xy(n.need("at")));c.pos=at-wxPoint(0,180);c.w=std::max(100,static_cast<int>(c.value.size())*80);c.h=180;
+        Pin p;p.name=c.value;p.number=1;p.exact=true;p.pad="1";p.anchor={0,180};p.endpoint={0,180};p.dir=PinDir::Passive;c.pins.push_back(p);
+        SymbolGraphic g;g.property="Value";g.textSize=textSize(n);g.points.push_back({c.w/2,80});c.graphics.push_back(g);result.document.components.push_back(c);
     }
 public:
     explicit Converter(const Node& n):root(n){}

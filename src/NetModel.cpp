@@ -645,6 +645,8 @@ NetGraph NetBuilder::Build(const std::vector<ComponentInstance>& components,
                 net.name = components[c].netLabel; explicitName = true;
                 net.isPower = components[c].pcbExcluded;
             }
+            const auto& implicit=components[c].pins[ref.pinIndex].implicitNet;
+            if (!explicitName && !implicit.empty()) { net.name=implicit; explicitName=true; net.isPower=true; }
             const wxString& compName = components[c].name;
 
             if ((compName == L"网络标签" || compName == L"全局标签") && !components[c].value.IsEmpty()) {

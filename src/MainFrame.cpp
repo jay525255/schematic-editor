@@ -1290,12 +1290,12 @@ void MainFrame::OnCommand(wxCommandEvent& event)
         {
             wxFileDialog dialog(this,L"导入 KiCad 原理图",wxEmptyString,wxEmptyString,
                                 L"KiCad 原理图 (*.kicad_sch)|*.kicad_sch",wxFD_OPEN|wxFD_FILE_MUST_EXIST);
-            if (dialog.ShowModal() != wxID_OK) break;
+            if (dialog.ShowModal() != wxID_OK) return;
             KiCadImportResult result; wxString error;
             if (!ImportKiCadSchematic(dialog.GetPath(),result,error)) {
-                wxMessageBox(error,L"导入 KiCad 原理图",wxOK|wxICON_ERROR,this); break;
+                wxMessageBox(error,L"导入 KiCad 原理图",wxOK|wxICON_ERROR,this); return;
             }
-            if (!MaybeSave()) break;
+            if (!MaybeSave()) return;
             const auto& doc=result.document;
             m_canvas->SetDocument(doc.components,doc.wires,doc.texts,doc.gridStep,doc.gridVisible,doc.snapEnabled,doc.zoom);
             m_canvas->MarkImported(); m_canvas->ZoomFit(); m_library->ClearSelection(); m_currentFile.clear();
@@ -1306,7 +1306,7 @@ void MainFrame::OnCommand(wxCommandEvent& event)
                 for (const auto& warning:result.warnings) message+=warning+"\n";
                 wxMessageBox(message,L"KiCad 导入说明",wxOK|wxICON_INFORMATION,this);
             }
-            break;
+            return;
         }
         case ID_FILE_IMPORT:
             // 导入 = 打开一份 .ses（与“打开”同一套逻辑）

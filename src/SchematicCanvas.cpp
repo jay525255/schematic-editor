@@ -252,6 +252,30 @@ int SchematicCanvas::HitTestComponent(const wxPoint& world) const
     {
         const ComponentInstance& comp = m_components[i];
 
+        if (comp.imported) {
+            const double tolerance=5.0/m_zoom;
+            const auto local=world-comp.pos;
+            for (size_t k=0;k<comp.pins.size();++k)
+                if (!comp.pins[k].hidden && DistanceToSegment(world,PinPosition(comp,static_cast<int>(k)),PinAnchor(comp,static_cast<int>(k)))<=tolerance) return i;
+            for (const auto& g:comp.graphics) {
+                if (g.points.empty()) continue;
+                if (!g.text.empty() || !g.property.empty()) {
+                    wxString text=g.property=="Reference"?comp.refdes:g.property=="Value"?comp.value:g.text;
+                    if (!g.property.empty() && g.property!="Reference" && g.property!="Value")
+                        for (const auto& prop:comp.properties) if (prop.first==g.property) text=prop.second;
+                    const int width=std::max(1,static_cast<int>(text.size()*g.textSize*0.65));
+                    wxRect box(g.points[0].x-width/2,g.points[0].y-g.textSize/2,width,g.textSize);
+                    if (box.Contains(local)) return i;
+                } else {
+                    if (g.points.size()>2 && g.points.front()==g.points.back()) {
+                        wxRect box(g.points[0],wxSize(1,1));for (const auto& p:g.points)box.Union(wxRect(p,wxSize(1,1)));
+                        if (box.Contains(local)) return i;
+                    }
+                    for (size_t k=1;k<g.points.size();++k)if (DistanceToSegment(local,g.points[k-1],g.points[k])<=tolerance) return i;
+                }
+            }
+            continue;
+        }
         // 本体 + 引脚线：按引脚长度外扩一圈，点在引脚线上也算点中这个元件
         wxRect box = BoxOf(comp);
         box.Inflate(kPinLen, kPinLen);
