@@ -2862,8 +2862,8 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
             if (pointSize < 6)
                 pointSize = 6;
 
-            if (pointSize > 72)
-                pointSize = 72;
+            if (pointSize > 200)
+                pointSize = 200;
 
             if (pointSize == item.pointSize)
                 return true;

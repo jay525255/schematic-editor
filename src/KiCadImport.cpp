@@ -249,7 +249,7 @@ public:
                 for(auto& c:result.document.components)for(size_t k=0;k<c.pins.size();++k)if(PinPosition(c,static_cast<int>(k))==at){c.pins[k].noConnect=true;attached=true;}
                 if(!attached){TextItem mark;mark.text=L"×";mark.pos=at-wxPoint(20,40);mark.pointSize=6;result.document.texts.push_back(mark);}
             }else if(key=="text"||key=="text_box") {
-                TextItem text;text.text=W(n.value());text.pos=world(xy(n.need("at")));text.pointSize=std::max(6,std::min(72,textSize(n)/13));result.document.texts.push_back(text);
+                TextItem text;text.text=W(n.value());text.pos=world(xy(n.need("at")));text.pointSize=std::max(6,std::min(200,static_cast<int>(std::lround(textSize(n)*0.75))));result.document.texts.push_back(text);
                 if(key=="text_box")warnings.insert(L"文本框转换为可编辑注记，边框和排版未保留。");
             }else if(key=="polyline"||key=="rectangle"||key=="circle"||key=="arc"||key=="bezier") {
                 ComponentInstance c;c.imported=true;c.pcbExcluded=true;c.id=++componentId;c.refdes=wxString::Format("#GRAPHIC%d",c.id);while(refs.count(c.refdes))c.refdes+="_";refs.insert(c.refdes);c.name=L"KiCad 图形";Transform t; // sheet coordinates already point down

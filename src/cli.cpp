@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc != 4 || (std::string(argv[1]) != "export-protel" && std::string(argv[1]) != "export-kicad" && std::string(argv[1]) != "topology")) {
-        std::cerr << "Usage: schematic-cli --version | export-protel design.ses output.net\n"; return 2;
+        std::cerr << "Usage: schematic-cli --version | import-kicad input.kicad_sch output.ses | export-kicad design.ses output.net | export-protel design.ses output.net | topology design.ses output.tsv\n"; return 2;
     }
     se::SchematicDocument doc; wxString error;
     if (!se::SchematicIO::Load(wxString::FromUTF8(argv[2]), doc, &error)) {
