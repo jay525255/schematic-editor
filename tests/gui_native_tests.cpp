@@ -1,5 +1,9 @@
 #include "MainFrame.h"
 #include "Ids.h"
+#include "SchematicIO.h"
+#include "KiCadExport.h"
+#include <set>
+#include <map>
 #include <wx/uiaction.h>
 #include <wx/dcscreen.h>
 #include <wx/dcmemory.h>
@@ -41,6 +45,12 @@ bool differentScreenshots(const wxString& first,const wxString& second){
 void check(bool ok,const char* message){if(!ok){screenshot("failure.png");throw std::runtime_error(message);}std::cout<<"PASS "<<message<<std::endl;}
 void key(int code,int modifiers=wxMOD_NONE){check(input->Char(code,modifiers),"native keyboard delivered");pump();}
 void click(wxWindow* window,const wxPoint& pos){check(input->MouseMove(window->ClientToScreen(pos))&&input->MouseClick(),"native mouse delivered");pump();}
+using Partition=std::set<std::set<wxString>>;
+Partition partition(const se::SchematicCanvas& canvas) {
+    const auto& cs=canvas.GetComponents(); const auto& ws=canvas.GetWires();
+    auto graph=se::NetBuilder::Build(cs,ws);Partition result;
+    for(const auto& net:graph.nets){std::set<wxString> nodes;for(const auto& p:net.pins)nodes.insert(cs[p.compIndex].refdes+"."+se::PcbPinNumber(cs[p.compIndex],p.pinIndex));result.insert(nodes);}return result;
+}
 struct Later:wxTimer{std::function<void()> f;explicit Later(std::function<void()> fn):f(std::move(fn)){}void Notify()override{f();}};
 void fileCommand(int modifiers,int code,const wxString& filename){
     bool typed=false;
@@ -53,7 +63,7 @@ void fileCommand(int modifiers,int code,const wxString& filename){
 }
 }
 int main(int argc,char**argv){
-    if(argc!=3){std::cerr<<"expected output directory\n";return 2;}
+    if(argc!=4){std::cerr<<"expected output directory\n";return 2;}
     out=wxFileName(wxString::FromUTF8(argv[1]),"").GetFullPath();wxFileName::Mkdir(out,wxS_DIR_DEFAULT,wxPATH_MKDIR_FULL);
     int wxargc=1;if(!wxEntryStart(wxargc,argv)){std::cerr<<"FAIL no display, no GUI operations executed\n";return 1;}
     if(!wxTheApp->CallOnInit())return 1;wxLog::SetActiveTarget(new wxLogStderr());
@@ -110,6 +120,28 @@ int main(int argc,char**argv){
         check(differentScreenshots("editing.png","dynamic-simulation.png"),"different circuit stages have fresh distinct screenshots");
         key(WXK_F5);pump(250);key(WXK_F5);check(canvas->GetSimulator().RuntimeTime()>paused+2,"native Resume continues existing timeline");
         key(WXK_F5,wxMOD_SHIFT);check(!canvas->GetSimulator().RuntimeReady(),"native Reset clears pending events");
+        canvas->MarkSaved();
+        fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'I',wxString::FromUTF8(argv[3]));
+        check(canvas->GetComponentCount()==9&&canvas->GetWireCount()==15&&canvas->IsModified(),"native KiCad import menu shortcut loads real rectifier and marks unsaved");
+        const auto importedPartition=partition(*canvas);
+        check(screenshot("kicad-import.png"),"save actual imported KiCad drawing screenshot");
+        size_t resistor=0;while(resistor<canvas->GetComponents().size()&&canvas->GetComponents()[resistor].refdes!="R1")++resistor;
+        check(resistor<canvas->GetComponents().size(),"real imported R1 exists");
+        auto beforeMove=canvas->GetComponents()[resistor].pos;
+        const auto at=canvas->ScreenPoint({11811,9398});click(canvas,at);
+        check(canvas->GetSelectedComponentIndex()==static_cast<int>(resistor),"native mouse selects imported resistor");
+        check(input->MouseMove(canvas->ClientToScreen(at))&&input->MouseDown(),"native imported-symbol drag starts");pump();
+        check(input->MouseMove(canvas->ClientToScreen(at+wxPoint(20,20)))&&input->MouseUp(),"native imported-symbol drag ends");pump();
+        check(canvas->GetComponents()[resistor].pos!=beforeMove&&partition(*canvas)==importedPartition,"native imported resistor moves with electrical connections");
+        key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos==beforeMove&&partition(*canvas)==importedPartition,"undo restores imported symbol and wires");
+        key('Y',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos!=beforeMove,"redo moves imported resistor");
+        check(screenshot("kicad-edited.png"),"save edited KiCad screenshot");
+        auto importedSave=wxFileName(out,"kicad-native-roundtrip.ses").GetFullPath();fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'S',importedSave);
+        check(wxFileExists(importedSave)&&!canvas->IsModified(),"native save stores imported editable document");
+        key('N',wxMOD_CONTROL);check(canvas->GetComponentCount()==0,"new clears imported document after save");
+        fileCommand(wxMOD_CONTROL,'O',importedSave);
+        check(canvas->GetComponentCount()==9&&partition(*canvas)==importedPartition,"native reopen preserves all imported electrical connections");
+        check(screenshot("kicad-reopened.png")&&differentScreenshots("kicad-import.png","kicad-edited.png"),"actual imported editing and reopen screenshots captured");
         canvas->MarkSaved();frame->Destroy();pump();frame=nullptr;wxTheApp->OnExit();wxEntryCleanup();return 0;
     }catch(const std::exception& e){screenshot("failure.png");std::cerr<<"FAIL "<<e.what()<<std::endl;return 1;}
 }
