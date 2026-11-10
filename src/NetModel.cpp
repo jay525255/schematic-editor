@@ -836,6 +836,7 @@ wxString NetBuilder::ToProtel(const std::vector<ComponentInstance>& components,
         if (compIndex < 0 || compIndex >= static_cast<int>(components.size()))
             return false;
 
+        if (components[compIndex].pcbExcluded) return false;
         wxString footprint = components[compIndex].footprint;   // Trim() 非 const，先拷一份
 
         return !footprint.Trim().IsEmpty();
@@ -874,7 +875,9 @@ wxString NetBuilder::ToProtel(const std::vector<ComponentInstance>& components,
                                       ? comp.pins[ref.pinIndex].number
                                       : (ref.pinIndex + 1);
 
-            nodes.push_back(wxString::Format(L"%s-%d", comp.refdes, pinNumber));
+            const wxString pad = ref.pinIndex >= 0 && ref.pinIndex < static_cast<int>(comp.pins.size()) && !comp.pins[ref.pinIndex].pad.empty()
+                ? comp.pins[ref.pinIndex].pad : wxString::Format("%d",pinNumber);
+            nodes.push_back(comp.refdes+"-"+pad);
         }
 
         if (nodes.size() < 2)

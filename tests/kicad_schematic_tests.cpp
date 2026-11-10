@@ -31,6 +31,18 @@ int main(int argc,char**argv){try{
         for(auto& c:d.components){auto before=c;for(int n=0;n<4;++n)se::RotateComponent(c,1);for(size_t k=0;k<c.pins.size();++k)require(se::PinPosition(c,k)==se::PinPosition(before,k),"four imported-symbol rotations restore pin positions");
             se::MirrorComponent(c,true);se::MirrorComponent(c,true);for(size_t k=0;k<c.pins.size();++k)require(se::PinPosition(c,k)==se::PinPosition(before,k),"double mirror restores imported pin positions");require(c.graphics[0].points==before.graphics[0].points,"rotations and mirrors retain imported drawing");}
     }
+    auto physical=load(fixtures+"/antenna-9.kicad_sch");
+    for(auto& c:physical.components)if(c.refdes=="J1"){
+        c.footprint="Test:AlphanumericPads";c.pins[0].pad="A1";c.pins[1].pad="B2";
+    }
+    auto physicalGraph=se::NetBuilder::Build(physical.components,physical.wires);
+    const auto protel=se::NetBuilder::ToProtel(physical.components,physicalGraph);
+    require(protel.Contains("J1-A1")&&protel.Contains("J1-B2"),"legacy Protel export retains actual imported pad identifiers, not array order");
+    wxString exported;
+    require(se::BuildKiCadNetlist(physical.components,physicalGraph,exported,error)&&exported.Contains("(pin \"A1\")")&&exported.Contains("(pin \"B2\")"),"standard KiCad exporter retains alphanumeric imported pad identifiers");
+    require(se::SchematicIO::Save(out+"/physical-pads.ses",physical,&error),"save alphanumeric physical pins");
+    se::SchematicDocument physicalReopened;
+    require(se::SchematicIO::Load(out+"/physical-pads.ses",physicalReopened,&error)&&topology(physical)==topology(physicalReopened),"alphanumeric pad identities survive project roundtrip");
     auto d=load(fixtures+"/rectifier-9.kicad_sch");bool resistor=false,capacitor=false,power=false;for(const auto& c:d.components){resistor|=c.refdes=="R1";if(c.refdes=="R1")require(c.xform==3,"KiCad counterclockwise 90 degrees retained in editable orientation");capacitor|=c.refdes=="C1";power|=c.netLabel=="GND";}require(resistor&&capacitor&&power,"real resistor capacitor and ground represented");
     const auto original=topology(d);
     auto bad=out+"/bad.kicad_sch";se::KiCadImportResult held;held.document=d;
