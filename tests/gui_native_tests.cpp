@@ -148,6 +148,14 @@ int main(int argc,char**argv){
         key('A',wxMOD_CONTROL);check(input->Text("2k"),"native keyboard edits imported resistor value");key(WXK_RETURN);
         check(canvas->GetComponents()[resistor].value=="2k","imported value change reaches real model");
         canvas->SetFocus();pump();
+        size_t r2=0;while(r2<canvas->GetComponents().size()&&canvas->GetComponents()[r2].refdes!="R2")++r2;
+        check(r2<canvas->GetComponents().size(),"second imported resistor exists");
+        auto branchStart=se::PinPosition(canvas->GetComponents()[r2],1);auto branchEnd=branchStart+wxPoint(400,0);
+        const int originalWireCount=canvas->GetWireCount();
+        key('W');click(canvas,canvas->ScreenPoint(branchStart));click(canvas,canvas->ScreenPoint(branchEnd));key(WXK_ESCAPE);
+        check(canvas->GetWireCount()>originalWireCount&&partition(*canvas)==importedPartition,"native wiring adds a branch to an imported electrical pin");
+        click(canvas,canvas->ScreenPoint(branchStart+wxPoint(200,0)));key(WXK_DELETE);
+        check(canvas->GetWireCount()==originalWireCount&&partition(*canvas)==importedPartition,"native selection and Delete edit an imported circuit wire");
         check(screenshot("kicad-edited.png"),"save edited KiCad screenshot");
         auto importedSave=wxFileName(out,"kicad-native-roundtrip.ses").GetFullPath();fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'S',importedSave);
         check(wxFileExists(importedSave)&&!canvas->IsModified(),"native save stores imported editable document");

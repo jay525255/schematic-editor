@@ -47,4 +47,4 @@ for source in files:
   raise AssertionError((name,'topology mismatch',{'KiCad only':[sorted(x) for x in eg-restricted],'editor only':[sorted(x) for x in restricted-eg]}))
  results.append({'file':name,'kicad_pins':len(ep),'editor_pins':len(ap),'nets':len(eg),'matched':True})
  print('PASS',name,len(ep),'pins;',len(eg),'nets match KiCad 9',flush=True)
-(out/'result.json').write_text(json.dumps({'verified':True,'kicad_version':version,'cases':results},indent=2)+'\n')
+(out/'result.json').write_text(json.dumps({'verified':True,'source_revision':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'kicad_version':version,'cases':results},indent=2)+'\n')

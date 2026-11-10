@@ -31,7 +31,7 @@ products={}
 for directory in [root/'build-ci',root/'build/Release']:
     if not directory.exists():continue
     for path in directory.rglob('*'):
-        if path.is_file() and (path.suffix in {'.exe','.dll','.pdb'} or (os.name!='nt' and path.name in {'SchematicEditor','schematic-cli','core_tests','simulation_tests','editing_regression_tests','gui_native_tests'})):
+        if path.is_file() and (path.suffix in {'.exe','.dll','.pdb'} or (os.name!='nt' and path.name in {'SchematicEditor','schematic-cli','core_tests','simulation_tests','editing_regression_tests','kicad_schematic_tests','gui_native_tests'})):
             if 'CMakeFiles' in path.parts:continue
             target=dist/(directory.name+'-'+path.name);shutil.copy2(path,target);products[target.name]=hashlib.sha256(target.read_bytes()).hexdigest()
 subprocess.run(['git','archive','--format=tar.gz','--output='+str(dist/'source.tar.gz'),sha],cwd=root,check=True)

@@ -189,6 +189,7 @@ class Converter {
             if((u=="0"||u==std::to_string(unit))&&(s=="0"||s==std::to_string(style))){contents(child);if(u==std::to_string(unit))matched=true;}
         }
         if(!matched&&specificUnits)throw std::runtime_error("Missing unit/body style in symbol: "+id);
+        if(c.pins.empty()&&c.graphics.empty())throw std::runtime_error("Embedded symbol has no graphics or pins: "+id);
         std::set<wxString> pads;for(const auto& p:c.pins)if(!pads.insert(p.pad).second)throw std::runtime_error("Stacked duplicate pad number not supported: "+c.refdes.utf8_string()+"."+p.pad.utf8_string());
         // Instance properties use absolute sheet coordinates, not the library transform.
         for(const auto& property:inst.children)if(property.list&&property.key()=="property"&&!hidden(property)&&property.find("at")){
