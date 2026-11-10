@@ -84,6 +84,50 @@ class Converter {
         if(it!=electricalPoints.end()&&it->second!=source)throw std::runtime_error("Electrical coordinates closer than 0.01 mm would merge; import cancelled");
         electricalPoints[key]=source;return pt;
     }
+    void verifyConnectivity() const {
+        // Check the entire electrical drawing before committing the conversion.
+        // Rounding must not turn nearby parallel wires or a near-miss T into a short.
+        using Precise=std::pair<long long,long long>;
+        std::vector<Precise> precise,rounded;
+        std::map<std::pair<int,int>,int> index;
+        for(const auto& entry:electricalPoints) {
+            index[entry.first]=static_cast<int>(precise.size());
+            precise.push_back(entry.second);rounded.push_back({entry.first.first,entry.first.second});
+        }
+        struct Dsu {
+            std::vector<int> parent;
+            explicit Dsu(size_t count):parent(count){for(size_t i=0;i<count;++i)parent[i]=static_cast<int>(i);}
+            int find(int x){while(parent[x]!=x){parent[x]=parent[parent[x]];x=parent[x];}return x;}
+            void join(int a,int b){a=find(a);b=find(b);if(a!=b)parent[a]=b;}
+        } exact(precise.size()), converted(precise.size());
+        auto id=[&](wxPoint p){return index.at({p.x,p.y});};
+        auto on=[](Precise p,Precise a,Precise b) {
+            if(a.first==b.first)return p.first==a.first&&p.second>=std::min(a.second,b.second)&&p.second<=std::max(a.second,b.second);
+            if(a.second==b.second)return p.second==a.second&&p.first>=std::min(a.first,b.first)&&p.first<=std::max(a.first,b.first);
+            return false;
+        };
+        for(const auto& wire:result.document.wires) {
+            int a=id(wire.a),b=id(wire.b);exact.join(a,b);converted.join(a,b);
+            for(size_t i=0;i<precise.size();++i){
+                if(on(precise[i],precise[a],precise[b]))exact.join(a,static_cast<int>(i));
+                if(on(rounded[i],rounded[a],rounded[b]))converted.join(a,static_cast<int>(i));
+            }
+        }
+        std::map<wxString,int> named;
+        for(const auto& c:result.document.components)for(size_t k=0;k<c.pins.size();++k) {
+            wxString name=c.netLabel.empty()?c.pins[k].implicitNet:c.netLabel;
+            if(name.empty())continue;int node=id(PinPosition(c,static_cast<int>(k)));
+            auto found=named.find(name);if(found==named.end())named[name]=node;
+            else {exact.join(found->second,node);converted.join(found->second,node);}
+        }
+        std::map<int,int> forward,reverse;
+        for(size_t i=0;i<precise.size();++i) {
+            int a=exact.find(static_cast<int>(i)),b=converted.find(static_cast<int>(i));
+            if((forward.count(a)&&forward[a]!=b)||(reverse.count(b)&&reverse[b]!=a))
+                throw std::runtime_error("0.01 mm coordinate rounding would change electrical topology; import cancelled");
+            forward[a]=b;reverse[b]=a;
+        }
+    }
     void graphic(ComponentInstance& c,const Node& n,const Transform& t) {
         SymbolGraphic g;auto add=[&](Point p){g.points.push_back(world(t(p)));};auto key=n.key();
         if(auto* stroke=n.find("stroke"))if(auto* width=stroke->find("width"))g.width=std::max(0,static_cast<int>(std::lround(num(*width)*Scale)));
@@ -181,7 +225,9 @@ public:
         for(const auto& n:root.children)if(n.list&&n.key()=="symbol")symbol(n);
         for(const auto& n:root.children)if(n.list&&(n.key()=="label"||n.key()=="global_label"))label(n);
         for(const auto& n:root.children)if(n.list&&n.key()=="wire") {
-            std::vector<wxPoint> pts;for(const auto& p:n.need("pts").children)if(p.list&&p.key()=="xy")pts.push_back(terminal(xy(p)));
+            std::vector<wxPoint> pts;std::vector<Point> source;
+            for(const auto& p:n.need("pts").children)if(p.list&&p.key()=="xy"){source.push_back(xy(p));pts.push_back(terminal(source.back()));}
+            if(source.size()==2&&source[0].x!=source[1].x&&source[0].y!=source[1].y)throw std::runtime_error("Diagonal electrical wire not supported");
             if(pts.size()!=2)throw std::runtime_error("Wire must have exactly two endpoints");Wire w;w.a=pts[0];w.b=pts[1];if(!w.IsAxisAligned()||w.a==w.b)throw std::runtime_error("Diagonal or zero-length electrical wire not supported");result.document.wires.push_back(w);
         }
         // Split at explicit junctions so the existing net builder distinguishes a
@@ -208,6 +254,7 @@ public:
             }
         }
         if(result.document.components.size()>5000||result.document.wires.size()>10000)throw std::runtime_error("Schematic exceeds import object limit");
+        verifyConnectivity();
         result.document.gridStep=10;result.document.zoom=0.1;result.warnings.assign(warnings.begin(),warnings.end());return std::move(result);
     }
 };

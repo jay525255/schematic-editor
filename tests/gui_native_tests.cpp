@@ -144,7 +144,7 @@ int main(int argc,char**argv){
         auto* grid=propertyGrid(frame);check(grid,"real property grid found");
         auto* valueProperty=grid->GetPropertyByLabel(L"元件值");check(valueProperty,"imported value property visible");
         grid->EnsureVisible(valueProperty);pump();auto valueRect=grid->GetPropertyRect(valueProperty,valueProperty);
-        click(grid,wxPoint(grid->GetSplitterPosition()+35,valueRect.y+valueRect.height/2));
+        click(grid,grid->CalcScrolledPosition(wxPoint(grid->GetSplitterPosition()+35,valueRect.y+valueRect.height/2)));
         key('A',wxMOD_CONTROL);check(input->Text("2k"),"native keyboard edits imported resistor value");key(WXK_RETURN);
         check(canvas->GetComponents()[resistor].value=="2k","imported value change reaches real model");
         canvas->SetFocus();pump();

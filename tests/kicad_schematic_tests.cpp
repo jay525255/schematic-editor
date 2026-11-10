@@ -36,6 +36,8 @@ int main(int argc,char**argv){try{
     auto bad=out+"/bad.kicad_sch";se::KiCadImportResult held;held.document=d;
     for(const wxString& text:{wxString("(kicad_sch (version 20250114)"),wxString("(kicad_sch (version nan))"),wxString("(kicad_sch (version 20250114) (lib_symbols) (bus))"),wxString("(kicad_sch (version 20990101) (lib_symbols))"),wxString("(kicad_sch (version 20250114) (lib_symbols) (symbol (lib_id \"missing:R\")))")}){
         require(se::SchematicIO::WriteTextFile(bad,text,&error),"write malformed/unsupported regression fixture");require(!se::ImportKiCadSchematic(bad,held,error)&&!error.empty(),"invalid/unsupported file yields concrete diagnostic");require(topology(held.document)==original,"failed import leaves previous document unchanged");}
+    require(se::SchematicIO::WriteTextFile(bad,"(kicad_sch (version 20250114) (lib_symbols) (wire (pts (xy 0 0) (xy 10 0))) (wire (pts (xy 5 0.004) (xy 15 0.004))))",&error),"write close parallel-wire precision regression");
+    require(!se::ImportKiCadSchematic(bad,held,error)&&error.Contains("topology"),"reject rounding-induced shorts even without colliding endpoint coordinates");
     require(!se::ImportKiCadSchematic(fixtures+"/dynamic-power-9.kicad_sch",held,error)&&error.Contains("sheet"),"real hierarchy rejected explicitly instead of dropping connections");
     return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;}}
