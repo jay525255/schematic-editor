@@ -22,7 +22,7 @@ def external(path):
     except Exception as e:return {'status':'unverified','reason':str(e)}
 url=f"https://github.com/{os.environ.get('GITHUB_REPOSITORY','')}/actions/runs/{os.environ.get('GITHUB_RUN_ID','')}"
 status={'source_revision':sha,'platform':a.platform,'workflow_url':url,'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT'),
- 'core':junit(out/'core-junit.xml',['core','simulation','editing_regression']),
+ 'core':junit(out/'core-junit.xml',['core','simulation','editing_regression','kicad_schematic']),
  'gui':junit(out/'gui/junit.xml',['gui_native']),
  'actual_executable':external(out/'gui/executable/result.json'),'real_kicad_import':external(out/'kicad/result.json')}
 if a.platform=='windows':status['note']='GUI and KiCad are assigned to the Ubuntu job; this job does not claim them.'

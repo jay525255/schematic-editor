@@ -1159,6 +1159,7 @@ void SchematicCanvas::DrawComponents(wxGraphicsContext* gc)
         // ---- 引脚（逐引脚着色：仿真值 / 网络高亮）----
         for (size_t k = 0; k < comp.pins.size(); ++k)
         {
+            if (comp.pins[k].hidden) continue;
             const wxPoint anchorW = PinAnchor(comp, static_cast<int>(k));
             const wxPoint outerW  = PinPosition(comp, static_cast<int>(k));
 
@@ -2379,7 +2380,7 @@ wxString SchematicCanvas::NextRefdes(const wxString& protoRefdes, const wxString
 
     // 电源符号这类"位号就是名字"的元件（VCC / GND）不参与计数，原样保留；
     // 以 '#' 开头的位号也不自动编号（KiCad 里 #PWR 之类）
-    if (prefix.IsEmpty() || prefix.StartsWith(L"#"))
+    if (prefix.IsEmpty())
         return protoRefdes;
 
     return NextReference(m_components, prefix);
@@ -2952,7 +2953,7 @@ void SchematicCanvas::SetDocument(const std::vector<ComponentInstance>& componen
     m_gridStep    = std::max(1, gridStep);
     m_gridVisible = gridVisible;
     m_snapEnabled = snapEnabled;
-    m_zoom        = (zoom > 0.05) ? std::min(8.0, zoom) : 1.0;
+    m_zoom        = (zoom >= 0.01) ? std::min(8.0, zoom) : 1.0;
 
     // ---- 重建编号计数器与位号计数 ----
     m_nextComponentId = 0;
@@ -3020,7 +3021,7 @@ void SchematicCanvas::SetDocument(const std::vector<ComponentInstance>& componen
 
 void SchematicCanvas::SetZoomAt(double newZoom, const wxPoint2DDouble& screenAnchor)
 {
-    newZoom = std::max(0.2, std::min(8.0, newZoom));
+    newZoom = std::max(0.01, std::min(8.0, newZoom));
 
     if (std::fabs(newZoom - m_zoom) < 1e-9)
         return;
@@ -3125,7 +3126,7 @@ void SchematicCanvas::ZoomFit()
     const double zx = static_cast<double>(size.x) / std::max(1, bbox.width);
     const double zy = static_cast<double>(size.y) / std::max(1, bbox.height);
 
-    m_zoom = std::max(0.2, std::min(4.0, std::min(zx, zy)));
+    m_zoom = std::max(0.01, std::min(4.0, std::min(zx, zy)));
 
     m_origin.m_x = size.x / 2.0 - (bbox.x + bbox.width / 2.0) * m_zoom;
     m_origin.m_y = size.y / 2.0 - (bbox.y + bbox.height / 2.0) * m_zoom;

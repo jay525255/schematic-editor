@@ -119,23 +119,29 @@ bool ValidateDocument(const SchematicDocument& doc, wxString* error)
 {
     auto reject = [&](const wxString& reason) { SetError(error, reason); return false; };
     auto coordinate = [](const wxPoint& p) { return p.x >= -1000000 && p.x <= 1000000 && p.y >= -1000000 && p.y <= 1000000; };
-    if (doc.gridStep < 1 || doc.gridStep > 1000 || !std::isfinite(doc.zoom) || doc.zoom < 0.05 || doc.zoom > 8)
+    if (doc.gridStep < 1 || doc.gridStep > 1000 || !std::isfinite(doc.zoom) || doc.zoom < 0.01 || doc.zoom > 8)
         return reject(L"视图参数不合法");
     std::set<int> componentIds, wireIds; std::set<wxString> references;
     for (const auto& comp : doc.components) {
         if (comp.id <= 0 || comp.id > 1000000 || !componentIds.insert(comp.id).second || comp.refdes.empty() || !references.insert(comp.refdes).second)
             return reject(L"元件ID或位号为空/重复，请在原文件中修正后重新打开");
-        if (comp.name.empty() || comp.w < 1 || comp.h < 1 || comp.w > 10000 || comp.h > 10000 || !coordinate(comp.pos) || comp.xform < 0 || comp.xform > 7)
+        if (comp.name.empty() || comp.w < 1 || comp.h < 1 || comp.w > (comp.imported ? 100000 : 10000) || comp.h > (comp.imported ? 100000 : 10000) || !coordinate(comp.pos) || comp.xform < 0 || comp.xform > 7)
             return reject(L"元件名称、尺寸、坐标或旋转参数不合法");
-        if (comp.pins.empty()) return reject(L"元件缺少引脚定义");
+        if (comp.pins.empty() && !comp.imported) return reject(L"元件缺少引脚定义");
         std::set<int> numbers; std::set<std::pair<int,int>> positions;
         for (size_t k = 0; k < comp.pins.size(); ++k) {
             const auto& pin = comp.pins[k];
-            if (pin.name.empty() || pin.number < 1 || !numbers.insert(pin.number).second || pin.count < 1 || pin.count > 64 || pin.slot < 0 || pin.slot >= pin.count)
+            if (pin.name.empty() || pin.number < 1 || !numbers.insert(pin.number).second || pin.count < 1 || pin.count > (comp.imported ? 4096 : 64) || pin.slot < 0 || pin.slot >= pin.count)
                 return reject(L"引脚名称、编号或布局参数不合法");
             auto at = PinPosition(comp, static_cast<int>(k));
-            if (!positions.insert({at.x, at.y}).second) return reject(L"同一元件多个引脚位置重叠");
+            if (!positions.insert({at.x, at.y}).second && !comp.imported) return reject(L"同一元件多个引脚位置重叠");
         }
+        for (const auto& g : comp.graphics) {
+            if (g.points.empty() || g.points.size() > 10000 || g.width < 0 || g.width > 1000 || g.textSize < 1 || g.textSize > 10000 || g.fill < 0 || g.fill > 2)
+                return reject(L"导入图形参数不合法");
+            for (const auto& p : g.points) if (!coordinate(p)) return reject(L"导入图形坐标不合法");
+        }
+        for (const auto& p : comp.pins) if (p.exact && (!coordinate(p.endpoint) || !coordinate(p.anchor))) return reject(L"引脚坐标不合法");
         if (comp.delayTicks < 1 || comp.delayTicks > 1000 || comp.clockPeriodTicks < 2 || comp.clockPeriodTicks > 10000 || comp.clockPeriodTicks % 2)
             return reject(L"数字仿真时间参数不合法");
     }
@@ -154,7 +160,9 @@ bool ValidateXmlNumbers(const wxXmlNode* node, wxString* error)
     std::set<wxString> fields;
     const auto name = node->GetName();
     if (name == "component") fields = {"id","x","y","w","h","xform","delayTicks","clockPeriodTicks"};
-    else if (name == "pin") fields = {"slot","count","number"};
+    else if (name == "pin") fields = {"slot","count","number","px","py","ax","ay"};
+    else if (name == "graphic") fields = {"width","fill","size"};
+    else if (name == "point") fields = {"x","y"};
     else if (name == "wire") fields = {"id","x1","y1","x2","y2"};
     else if (name == "text") fields = {"x","y","size"};
     else if (name == "view") fields = {"gridStep"};
@@ -196,7 +204,9 @@ bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxStr
     xml.SetFileEncoding(L"UTF-8");
 
     wxXmlNode* root = new wxXmlNode(nullptr, wxXML_ELEMENT_NODE, L"schematic");
-    root->AddAttribute(L"version", L"1.1");
+    bool extended = false;
+    for (const auto& c : doc.components) extended = extended || c.imported;
+    root->AddAttribute(L"version", extended ? L"1.2" : L"1.1");
     root->AddAttribute(L"format", L"circuit-schematic");
     root->AddAttribute(L"generator", L"SchematicEditor 1.0");
 
@@ -233,6 +243,24 @@ bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxStr
         AddIntAttr(node, "delayTicks", comp.delayTicks);
         AddIntAttr(node, "clockPeriodTicks", comp.clockPeriodTicks);
 
+        if (comp.imported) {
+            AddBoolAttr(node, "imported", true); AddBoolAttr(node, "pcbExcluded", comp.pcbExcluded);
+            node->AddAttribute("netLabel", comp.netLabel);
+            for (const auto& prop : comp.properties) {
+                auto* n = new wxXmlNode(wxXML_ELEMENT_NODE, "property");
+                n->AddAttribute("name", prop.first); n->AddAttribute("value", prop.second); node->AddChild(n);
+            }
+            for (const auto& g : comp.graphics) {
+                auto* n = new wxXmlNode(wxXML_ELEMENT_NODE, "graphic");
+                n->AddAttribute("text", g.text); n->AddAttribute("property", g.property);
+                AddIntAttr(n,"size",g.textSize); AddIntAttr(n,"fill",g.fill); AddIntAttr(n,"width",g.width);
+                for (const auto& pt : g.points) {
+                    auto* pn = new wxXmlNode(wxXML_ELEMENT_NODE,"point");
+                    AddIntAttr(pn,"x",pt.x); AddIntAttr(pn,"y",pt.y); n->AddChild(pn);
+                }
+                node->AddChild(n);
+            }
+        }
         // 引脚一起存：文件自包含，不依赖当前元件库版本
         for (const Pin& pin : comp.pins)
         {
@@ -244,6 +272,12 @@ bool SchematicIO::Save(const wxString& path, const SchematicDocument& doc, wxStr
             AddIntAttr(pinNode, "count", pin.count);
             AddIntAttr(pinNode, "number", pin.number);
 
+            if (pin.exact) {
+                AddBoolAttr(pinNode,"exact",true); AddIntAttr(pinNode,"px",pin.endpoint.x); AddIntAttr(pinNode,"py",pin.endpoint.y);
+                AddIntAttr(pinNode,"ax",pin.anchor.x); AddIntAttr(pinNode,"ay",pin.anchor.y);
+                pinNode->AddAttribute("pad",pin.pad); pinNode->AddAttribute("implicitNet",pin.implicitNet);
+                AddBoolAttr(pinNode,"hidden",pin.hidden); AddBoolAttr(pinNode,"noConnect",pin.noConnect);
+            }
             node->AddChild(pinNode);
         }
 
@@ -342,7 +376,7 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
     }
 
     const auto version = root->GetAttribute("version", "1.0");
-    if (version != "1.0" && version != "1.1") {
+    if (version != "1.0" && version != "1.1" && version != "1.2") {
         SetError(error, L"不支持的文件版本：" + version); return false;
     }
     if (!ValidateXmlNumbers(root, error)) return false;
@@ -404,6 +438,17 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
                     }
                 }
 
+                comp.imported = GetBoolAttr(node,"imported",false);
+                comp.pcbExcluded = GetBoolAttr(node,"pcbExcluded",false); comp.netLabel = GetStrAttr(node,"netLabel");
+                for (auto* n = node->GetChildren(); n; n = n->GetNext()) {
+                    if (n->GetName() == "property") comp.properties.push_back({GetStrAttr(n,"name"),GetStrAttr(n,"value")});
+                    if (n->GetName() != "graphic") continue;
+                    SymbolGraphic g; g.text = GetStrAttr(n,"text"); g.property = GetStrAttr(n,"property");
+                    g.textSize = GetIntAttr(n,"size",100); g.fill = GetIntAttr(n,"fill",0); g.width = GetIntAttr(n,"width",10);
+                    for (auto* pt = n->GetChildren(); pt; pt = pt->GetNext()) if (pt->GetName() == "point")
+                        g.points.push_back({GetIntAttr(pt,"x",0),GetIntAttr(pt,"y",0)});
+                    comp.graphics.push_back(g);
+                }
                 int pinOrder = 0;
 
                 for (wxXmlNode* pinNode = node->GetChildren(); pinNode; pinNode = pinNode->GetNext())
@@ -422,6 +467,11 @@ bool SchematicIO::Load(const wxString& path, SchematicDocument& doc, wxString* e
                     ++pinOrder;
                     pin.number = GetIntAttr(pinNode, "number", pinOrder);
 
+                    pin.exact = GetBoolAttr(pinNode,"exact",false);
+                    pin.endpoint = {GetIntAttr(pinNode,"px",0),GetIntAttr(pinNode,"py",0)};
+                    pin.anchor = {GetIntAttr(pinNode,"ax",0),GetIntAttr(pinNode,"ay",0)};
+                    pin.pad = GetStrAttr(pinNode,"pad"); pin.implicitNet = GetStrAttr(pinNode,"implicitNet");
+                    pin.hidden = GetBoolAttr(pinNode,"hidden",false); pin.noConnect = GetBoolAttr(pinNode,"noConnect",false);
                     comp.pins.push_back(pin);
                 }
 

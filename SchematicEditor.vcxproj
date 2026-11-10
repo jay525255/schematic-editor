@@ -135,6 +135,7 @@
     <ClCompile Include="src\CircuitTools.cpp" />
     <ClCompile Include="src\EditingTools.cpp" />
     <ClCompile Include="src\KiCadExport.cpp" />
+    <ClCompile Include="src\KiCadImport.cpp" />
     <ClCompile Include="src\SchematicIO.cpp" />
     <ClCompile Include="src\SimModel.cpp" />
     <ClCompile Include="src\DigitalSimulator.cpp" />
@@ -149,6 +150,7 @@
     <ClInclude Include="src\CircuitTools.h" />
     <ClInclude Include="src\EditingTools.h" />
     <ClInclude Include="src\KiCadExport.h" />
+    <ClInclude Include="src\KiCadImport.h" />
     <ClInclude Include="src\SchematicIO.h" />
     <ClInclude Include="src\SimModel.h" />
     <ClInclude Include="src\DigitalSimulator.h" />

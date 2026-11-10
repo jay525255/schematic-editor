@@ -55,6 +55,7 @@ wxPoint PinAnchor(const ComponentInstance& comp, int pinIndex)
         return comp.pos;
 
     const Pin& pin = comp.pins[pinIndex];
+    if (pin.exact) return comp.pos + pin.anchor;
     const int  n   = std::max(1, pin.count);
     const int  k   = pin.slot;
 
@@ -81,6 +82,8 @@ wxPoint PinAnchor(const ComponentInstance& comp, int pinIndex)
 
 wxPoint PinPosition(const ComponentInstance& comp, int pinIndex)
 {
+    if (pinIndex >= 0 && pinIndex < static_cast<int>(comp.pins.size()) && comp.pins[pinIndex].exact)
+        return comp.pos + comp.pins[pinIndex].endpoint;
     const wxPoint anchor = PinAnchor(comp, pinIndex);
 
     switch (PinSide(comp, pinIndex))
@@ -336,6 +339,16 @@ void RotateComponent(ComponentInstance& comp, int quartersCW)
     if (q == 0)
         return;
 
+    const auto transformExact = [&](wxPoint p) {
+        int w = comp.w, h = comp.h;
+        for (int i = 0; i < q; ++i) { p = wxPoint(h - p.y, p.x); std::swap(w, h); }
+        return p;
+    };
+    for (auto& pin : comp.pins) if (pin.exact) {
+        pin.anchor = transformExact(pin.anchor); pin.endpoint = transformExact(pin.endpoint);
+        for (int i = 0; i < q; ++i) pin.side = pin.side == Side::Left ? Side::Top : pin.side == Side::Top ? Side::Right : pin.side == Side::Right ? Side::Bottom : Side::Left;
+    }
+    for (auto& graphic : comp.graphics) for (auto& p : graphic.points) p = transformExact(p);
     std::vector<wxPoint> rel = CollectAnchors(comp);
 
     const wxPoint centre(comp.pos.x + comp.w / 2, comp.pos.y + comp.h / 2);
@@ -360,7 +373,7 @@ void RotateComponent(ComponentInstance& comp, int quartersCW)
     const int mir = (comp.xform >= 4) ? 4 : 0;
     comp.xform = mir + (rot + q) % 4;
 
-    RebuildPinsFromAnchors(comp, rel);
+    if (!comp.imported) RebuildPinsFromAnchors(comp, rel);
 }
 
 void MirrorComponent(ComponentInstance& comp, bool horizontal)
@@ -368,6 +381,13 @@ void MirrorComponent(ComponentInstance& comp, bool horizontal)
     if (comp.pins.empty() && comp.w <= 0)
         return;
 
+    const auto transformExact = [&](wxPoint p) { return horizontal ? wxPoint(comp.w-p.x,p.y) : wxPoint(p.x,comp.h-p.y); };
+    for (auto& pin : comp.pins) if (pin.exact) {
+        pin.anchor = transformExact(pin.anchor); pin.endpoint = transformExact(pin.endpoint);
+        if (horizontal && (pin.side == Side::Left || pin.side == Side::Right)) pin.side = pin.side == Side::Left ? Side::Right : Side::Left;
+        if (!horizontal && (pin.side == Side::Top || pin.side == Side::Bottom)) pin.side = pin.side == Side::Top ? Side::Bottom : Side::Top;
+    }
+    for (auto& graphic : comp.graphics) for (auto& p : graphic.points) p = transformExact(p);
     std::vector<wxPoint> rel = CollectAnchors(comp);
 
     if (horizontal)
@@ -398,7 +418,7 @@ void MirrorComponent(ComponentInstance& comp, bool horizontal)
 
     comp.xform = (newMir ? 4 : 0) + newRot;
 
-    RebuildPinsFromAnchors(comp, rel);
+    if (!comp.imported) RebuildPinsFromAnchors(comp, rel);
 }
 
 wxString DescribeXform(int xform)
@@ -561,8 +581,9 @@ NetGraph NetBuilder::Build(const std::vector<ComponentInstance>& components,
     std::map<wxString, int> namedNodes;
     for (size_t k = 0; k < pinRefs.size(); ++k) {
         const auto& comp = components[pinRefs[k].compIndex];
-        wxString name;
-        if (comp.name == L"VCC" || comp.name == L"GND") name = comp.name;
+        wxString name = comp.pins[pinRefs[k].pinIndex].implicitNet;
+        if (!comp.netLabel.empty()) name = comp.netLabel;
+        else if (comp.name == L"VCC" || comp.name == L"GND") name = comp.name;
         else if (comp.name == L"网络标签" || comp.name == L"全局标签") name = comp.value;
         if (name.IsEmpty()) continue;
         auto found = namedNodes.find(name);
@@ -620,6 +641,10 @@ NetGraph NetBuilder::Build(const std::vector<ComponentInstance>& components,
             if (c < 0 || c >= static_cast<int>(components.size()))
                 continue;
 
+            if (!components[c].netLabel.empty()) {
+                net.name = components[c].netLabel; explicitName = true;
+                net.isPower = components[c].pcbExcluded;
+            }
             const wxString& compName = components[c].name;
 
             if ((compName == L"网络标签" || compName == L"全局标签") && !components[c].value.IsEmpty()) {
@@ -897,7 +922,7 @@ wxString NetBuilder::RunErc(const std::vector<ComponentInstance>& components,
                 (netIdx < static_cast<int>(graph.nets.size()) &&
                  graph.nets[netIdx].pins.size() < 2);
 
-            if (floating)
+            if (floating && !components[c].pins[k].noConnect)
             {
                 ++issues;
                 report << wxString::Format(L"    - %s 的引脚 %s 悬空\n",

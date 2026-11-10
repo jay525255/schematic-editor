@@ -24,6 +24,7 @@ enum
     ID_FILE_CLOSE_PROJECT,
     ID_FILE_IMPORT,
     ID_FILE_EXPORT,
+    ID_FILE_IMPORT_KICAD,
 
     // --------------------------------------------------------
     // 编辑

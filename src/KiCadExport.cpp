@@ -5,9 +5,9 @@ namespace {
 wxString Quoted(const wxString& raw){wxString s=raw;s.Replace("\\","\\\\");s.Replace("\"","\\\"");s.Replace("\n","\\n");s.Replace("\r","\\r");s.Replace("\t","\\t");return "\""+s+"\"";}
 bool Identifier(const wxString& s){if(s.empty())return false;for(auto c:s)if(!((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'))return false;return (s[0]>='A'&&s[0]<='Z')||(s[0]>='a'&&s[0]<='z');}
 }
-wxString PcbPinNumber(const ComponentInstance& c,size_t pin){return wxString::Format("%d",c.pins[pin].number > 0 ? c.pins[pin].number : static_cast<int>(pin)+1);}
+wxString PcbPinNumber(const ComponentInstance& c,size_t pin){if (!c.pins[pin].pad.empty()) return c.pins[pin].pad; return wxString::Format("%d",c.pins[pin].number > 0 ? c.pins[pin].number : static_cast<int>(pin)+1);}
 wxString DefaultFootprint(size_t n){if(n<1||n>40)return {};return wxString::Format("Connector_PinHeader_2.54mm:PinHeader_1x%02zu_P2.54mm_Vertical",n);}
-bool IsPcbComponent(const ComponentInstance& c){return !c.pins.empty()&&c.name!=L"文本"&&c.name!=L"连接点"&&c.name!=L"未连接标记"&&c.name!=L"网络标签"&&c.name!=L"全局标签"&&c.name!=L"GND"&&c.name!=L"VCC";}
+bool IsPcbComponent(const ComponentInstance& c){return !c.pcbExcluded&&!c.pins.empty()&&c.name!=L"文本"&&c.name!=L"连接点"&&c.name!=L"未连接标记"&&c.name!=L"网络标签"&&c.name!=L"全局标签"&&c.name!=L"GND"&&c.name!=L"VCC";}
 bool BuildKiCadNetlist(const std::vector<ComponentInstance>& cs,const NetGraph& graph,wxString& text,wxString& error){
     text.clear();error.clear();std::set<wxString> refs,netnames;int physical=0;
     if(graph.pinNet.size()!=cs.size()){error=L"网络与元件映射不匹配";return false;}

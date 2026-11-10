@@ -162,6 +162,7 @@ public:
                      double zoom);
 
     bool IsModified() const { return m_modified; }
+    void MarkImported() { m_modified = true; }
     void MarkSaved() { m_modified = false; }
 
     // ---- 编辑 ----------------------------------------------

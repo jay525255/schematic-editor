@@ -188,6 +188,18 @@ void PaintSymbolBody(wxGraphicsContext* gc,
                      double penWidth,
                      bool dashed)
 {
+    if (comp.imported) {
+        for (const auto& g : comp.graphics) {
+            if (g.points.empty() || !g.text.empty() || !g.property.empty()) continue;
+            auto path = gc->CreatePath();
+            path.MoveToPoint(place.Map(g.points.front().x,g.points.front().y));
+            for (size_t i=1;i<g.points.size();++i) path.AddLineToPoint(place.Map(g.points[i].x,g.points[i].y));
+            gc->SetPen(wxPen(outline,std::max(0.6,g.width*place.scale)));
+            gc->SetBrush(g.fill == 0 ? *wxTRANSPARENT_BRUSH : wxBrush(g.fill == 1 ? outline : fill));
+            if (g.fill) { path.CloseSubpath(); gc->DrawPath(path); } else gc->StrokePath(path);
+        }
+        return;
+    }
     const ShapeSpec spec = SpecOf(comp.name, KindOfInstance(comp));
 
     // ---- 作者坐标系尺寸 ----
@@ -732,6 +744,18 @@ void PaintSymbolLabels(wxGraphicsContext* gc,
     const double w = comp.w;
     const double h = comp.h;
 
+    if (comp.imported) {
+        for (const auto& g : comp.graphics) {
+            if (g.points.empty() || (g.text.empty() && g.property.empty())) continue;
+            const wxString text = g.property == "Reference" ? comp.refdes : g.property == "Value" ? comp.value : g.text;
+            const auto at = place.Map(g.points[0].x,g.points[0].y);
+            wxFont font(wxFontInfo(8).Family(wxFONTFAMILY_SWISS));
+            font.SetPixelSize(wxSize(0,std::max(1,static_cast<int>(g.textSize*place.scale))));
+            gc->SetFont(font,refColour);
+            wxDouble tw,th; gc->GetTextExtent(text,&tw,&th); gc->DrawText(text,at.m_x-tw/2,at.m_y-th/2);
+        }
+        return;
+    }
     // ---- 引脚名：放在引脚线外侧，绝不压住符号本体 ----
     if (showPinNames)
     {

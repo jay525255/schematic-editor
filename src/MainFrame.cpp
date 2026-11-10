@@ -1,4 +1,5 @@
 #include "MainFrame.h"
+#include "KiCadImport.h"
 
 #include <wx/aboutdlg.h>
 #include <wx/artprov.h>
@@ -269,6 +270,7 @@ void MainFrame::CreateMenus()
     wxMenu* importMenu = new wxMenu;
     importMenu->Append(ID_FILE_IMPORT, L"导入原理图 (.ses)...");
     fileMenu->AppendSubMenu(importMenu, L"导入");
+    fileMenu->Append(ID_FILE_IMPORT_KICAD, L"导入 KiCad 原理图...\tCtrl+Shift+I");
 
     wxMenu* exportMenu = new wxMenu;
     exportMenu->Append(ID_FILE_EXPORT, L"导出网表 (.net)...");
@@ -1276,6 +1278,28 @@ void MainFrame::OnCommand(wxCommandEvent& event)
             DoSaveSchematic(true);
             return;
 
+        case ID_FILE_IMPORT_KICAD:
+        {
+            wxFileDialog dialog(this,L"导入 KiCad 原理图",wxEmptyString,wxEmptyString,
+                                L"KiCad 原理图 (*.kicad_sch)|*.kicad_sch",wxFD_OPEN|wxFD_FILE_MUST_EXIST);
+            if (dialog.ShowModal() != wxID_OK) break;
+            KiCadImportResult result; wxString error;
+            if (!ImportKiCadSchematic(dialog.GetPath(),result,error)) {
+                wxMessageBox(error,L"导入 KiCad 原理图",wxOK|wxICON_ERROR,this); break;
+            }
+            if (!MaybeSave()) break;
+            const auto& doc=result.document;
+            m_canvas->SetDocument(doc.components,doc.wires,doc.texts,doc.gridStep,doc.gridVisible,doc.snapEnabled,doc.zoom);
+            m_canvas->MarkImported(); m_canvas->ZoomFit(); m_library->ClearSelection(); m_currentFile.clear();
+            UpdateTitle(); SyncViewState(); UpdateProperties(); UpdateStatusBar();
+            SetHint(wxString::Format(L"已导入 KiCad 原理图：%d 个元件，%d 条导线；保存为 .ses 工程继续编辑",m_canvas->GetComponentCount(),m_canvas->GetWireCount()));
+            if (!result.warnings.empty()) {
+                wxString message=L"已导入电路，以下图面样式已转换：\n";
+                for (const auto& warning:result.warnings) message+=warning+"\n";
+                wxMessageBox(message,L"KiCad 导入说明",wxOK|wxICON_INFORMATION,this);
+            }
+            break;
+        }
         case ID_FILE_IMPORT:
             // 导入 = 打开一份 .ses（与“打开”同一套逻辑）
             DoOpenSchematic();

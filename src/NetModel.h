@@ -65,12 +65,28 @@ struct Pin
     Side     side  = Side::Left;
     int      slot  = 0;            // 同侧第几个（从 0 开始）
     int      count = 1;            // 同侧共几个（用于均匀分布）
+    // Imported symbols retain their actual electrical endpoint and body anchor.
+    bool     exact = false;
+    wxPoint  endpoint, anchor;    // relative to the component bounding box
+    wxString pad;                // KiCad physical pin number (also supports A1, K, etc.)
+    wxString implicitNet;        // hidden power pin connection
+    bool     hidden = false;
+    bool     noConnect = false;
     int      number = 0;           // 引脚序号（1,2,3…）—— PCB 网表按序号引用引脚
 };
 
 // ------------------------------------------------------------
 // 元件实例
 // ------------------------------------------------------------
+struct SymbolGraphic
+{
+    std::vector<wxPoint> points;  // local polyline/polygon; curves are tessellated
+    wxString text, property;     // property is Reference/Value or empty
+    int textSize = 100;          // world units, not point size
+    int fill = 0;                // 0 transparent, 1 outline, 2 background
+    int width = 10;
+};
+
 struct ComponentInstance
 {
     int              id     = 0;   // 实例唯一 id
@@ -80,6 +96,12 @@ struct ComponentInstance
     int              w      = 60;
     int              h      = 40;
     std::vector<Pin> pins;
+
+    bool imported = false;
+    bool pcbExcluded = false;
+    wxString netLabel;           // explicit power/label connectivity, independent of name
+    std::vector<SymbolGraphic> graphics;
+    std::vector<std::pair<wxString, wxString>> properties;
 
     // ---- PCB 网表需要的两项 ----
     //  footprint 为空表示"不是物理元件"（电源符号、网络标签等），

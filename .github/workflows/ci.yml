@@ -79,7 +79,7 @@ jobs:
         run: |
           ctest --test-dir build-ci -C Release -LE gui -V --output-junit "$PWD/ci-artifacts/core-junit.xml" 2>&1 | Tee-Object ci-artifacts/core-tests.log
           if ($LASTEXITCODE -ne 0) { throw 'Core tests failed' }
-          python tools/assert_junit.py ci-artifacts/core-junit.xml core simulation editing_regression
+          python tools/assert_junit.py ci-artifacts/core-junit.xml core simulation editing_regression kicad_schematic
           if ($LASTEXITCODE -ne 0) { throw 'Tests absent, skipped or failed' }
       - name: Collect exact-revision binaries and test evidence
         if: always()
@@ -125,7 +125,7 @@ jobs:
         run: |
           set -o pipefail
           ctest --test-dir build-ci -LE gui -V --output-junit "$PWD/ci-artifacts/core-junit.xml" 2>&1 | tee ci-artifacts/core-tests.log
-          python3 tools/assert_junit.py ci-artifacts/core-junit.xml core simulation editing_regression
+          python3 tools/assert_junit.py ci-artifacts/core-junit.xml core simulation editing_regression kicad_schematic
       - name: Execute native mouse and keyboard GUI tests with screenshots
         if: ${{ always() && steps.build.outcome == 'success' }}
         run: xvfb-run -a -s '-screen 0 1600x1000x24 -nolisten tcp' dbus-run-session -- bash tools/run_gui_ci.sh

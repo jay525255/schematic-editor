@@ -48,6 +48,7 @@
     <ClCompile Include="src\NetModel.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\KiCadImport.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="src\SchematicIO.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -83,6 +84,7 @@
     <ClInclude Include="src\NetModel.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\KiCadImport.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="src\SchematicIO.h">
       <Filter>头文件</Filter>
     </ClInclude>
