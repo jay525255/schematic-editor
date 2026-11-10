@@ -748,6 +748,14 @@ void MainFrame::UpdateProperties()
                             comp->value.IsEmpty() ? comp->name : comp->value,
                             L"comp.value");
 
+        if (comp->imported && !comp->properties.empty()) {
+            m_props->AddCategory(L"KiCad 参数");
+            for (size_t i=0;i<comp->properties.size();++i) {
+                const auto& prop=comp->properties[i];
+                if (prop.first=="Reference" || prop.first=="Value" || prop.first=="Footprint") continue;
+                m_props->AddEditRow(prop.first,prop.second,wxString::Format("comp.param.%zu",i));
+            }
+        }
         m_props->AddCategory(L"数字仿真（每步100ms）");
         m_props->AddEditRow(L"模型（空=按名称）", comp->logicModel, "comp.logicModel");
         m_props->AddEditIntRow(L"传播延迟（步）", comp->delayTicks, "comp.delayTicks");

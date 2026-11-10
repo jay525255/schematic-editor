@@ -2,6 +2,7 @@
 #include <wx/file.h>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -50,7 +51,7 @@ public:
     Node parse(){auto n=read(0);space();if(at!=s.size())fail("Trailing content");return n;}
 };
 wxString W(const std::string& s) {auto w=wxString::FromUTF8(s.data(),s.size());if(!s.empty()&&w.empty())throw std::runtime_error("Invalid UTF-8");return w;}
-double num(const Node& n,size_t i=1) {double v;auto s=W(n.value(i));if(!s.ToCDouble(&v)||!std::isfinite(v)||std::abs(v)>100000)throw std::runtime_error("Invalid number at line "+std::to_string(n.line));return v;}
+double num(const Node& n,size_t i=1) {double v;auto s=W(n.value(i));if(!s.ToCDouble(&v)||!std::isfinite(v)||std::abs(v)>1000000000)throw std::runtime_error("Invalid number at line "+std::to_string(n.line));return v;}
 int integer(const Node& n,size_t i=1) {double v=num(n,i);if(v!=std::floor(v))throw std::runtime_error("Expected integer at line "+std::to_string(n.line));return static_cast<int>(v);}
 struct Point {double x=0,y=0;};
 Point xy(const Node& n) {return {num(n,1),num(n,2)};}
@@ -146,7 +147,7 @@ class Converter {
         std::set<wxString> pads;for(const auto& p:c.pins)if(!pads.insert(p.pad).second)throw std::runtime_error("Stacked duplicate pad number not supported: "+c.refdes.utf8_string()+"."+p.pad.utf8_string());
         // Instance properties use absolute sheet coordinates, not the library transform.
         for(const auto& property:inst.children)if(property.list&&property.key()=="property"&&!hidden(property)&&property.find("at")){
-            auto name=property.value(),value=property.value(2);if(value.empty()||value=="~")continue;SymbolGraphic g;g.text=W(value);g.property=(name=="Reference"||name=="Value")?W(name):wxString();g.textSize=textSize(property);g.points.push_back(world(xy(property.need("at"))));c.graphics.push_back(g);
+            auto name=property.value(),value=property.value(2);if(value.empty()||value=="~")continue;SymbolGraphic g;g.text=W(value);g.property=W(name);g.textSize=textSize(property);g.points.push_back(world(xy(property.need("at"))));c.graphics.push_back(g);
         }
         int minX=world(t.origin).x-30,minY=world(t.origin).y-30,maxX=minX+60,maxY=minY+60;
         auto grow=[&](const wxPoint& p){minX=std::min(minX,p.x);minY=std::min(minY,p.y);maxX=std::max(maxX,p.x);maxY=std::max(maxY,p.y);};
@@ -188,8 +189,9 @@ public:
         for(const auto& n:root.children)if(n.list) {
             auto key=n.key();
             if(key=="no_connect") {
-                auto at=terminal(xy(n.need("at")));for(auto& c:result.document.components)for(size_t k=0;k<c.pins.size();++k)if(PinPosition(c,static_cast<int>(k))==at)c.pins[k].noConnect=true;
-                TextItem mark;mark.text=L"×";mark.pos=at-wxPoint(20,40);mark.pointSize=6;result.document.texts.push_back(mark);
+                auto at=terminal(xy(n.need("at")));bool attached=false;
+                for(auto& c:result.document.components)for(size_t k=0;k<c.pins.size();++k)if(PinPosition(c,static_cast<int>(k))==at){c.pins[k].noConnect=true;attached=true;}
+                if(!attached){TextItem mark;mark.text=L"×";mark.pos=at-wxPoint(20,40);mark.pointSize=6;result.document.texts.push_back(mark);}
             }else if(key=="text"||key=="text_box") {
                 TextItem text;text.text=W(n.value());text.pos=world(xy(n.need("at")));text.pointSize=std::max(6,std::min(72,textSize(n)/13));result.document.texts.push_back(text);
                 if(key=="text_box")warnings.insert(L"文本框转换为可编辑注记，边框和排版未保留。");

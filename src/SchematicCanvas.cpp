@@ -1159,6 +1159,12 @@ void SchematicCanvas::DrawComponents(wxGraphicsContext* gc)
         // ---- 引脚（逐引脚着色：仿真值 / 网络高亮）----
         for (size_t k = 0; k < comp.pins.size(); ++k)
         {
+            if (comp.pins[k].noConnect) {
+                const auto pt=ToScreen(wxPoint2DDouble(PinPosition(comp,static_cast<int>(k))));
+                gc->SetPen(wxPen(wxColour(60,90,150),1));
+                gc->StrokeLine(pt.m_x-3,pt.m_y-3,pt.m_x+3,pt.m_y+3);
+                gc->StrokeLine(pt.m_x-3,pt.m_y+3,pt.m_x+3,pt.m_y-3);
+            }
             if (comp.pins[k].hidden) continue;
             const wxPoint anchorW = PinAnchor(comp, static_cast<int>(k));
             const wxPoint outerW  = PinPosition(comp, static_cast<int>(k));
@@ -2630,6 +2636,7 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
 
             PushUndo(L"修改位号");
             comp.refdes = value;
+            for (auto& prop : comp.properties) if (prop.first == "Reference") prop.second = value;
 
             // 让自动编号计数器跟上，免得以后新放一个元件又和这里撞号。
             // 例：把 U1 改成 U7，之后新放的应该是 U8 而不是 U2。
@@ -2703,8 +2710,12 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
             if (value == comp.value)
                 return true;
 
+            if (!comp.netLabel.empty() && (value.empty() || value.Contains("${") || value.Contains("..")))
+                return Reject(L"网络名称不能为空或含未解析的变量/总线表达式");
             PushUndo(L"修改元件值");
+            if (!comp.netLabel.empty()) comp.netLabel = value;
             comp.value = value;
+            for (auto& prop : comp.properties) if (prop.first == "Value") prop.second = value;
             m_netsDirty = true; // Label values determine electrical net identity.
             Touch();
             GetNetGraph();
@@ -2718,6 +2729,14 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
             return true;
         }
 
+        if (field.StartsWith("param.")) {
+            long index=-1;
+            if (!field.Mid(6).ToLong(&index) || index<0 || index>=static_cast<long>(comp.properties.size())) return Reject(L"元件参数不存在");
+            auto& prop=comp.properties[static_cast<size_t>(index)];
+            if (prop.first=="Reference" || prop.first=="Value" || prop.first=="Footprint") return Reject(L"请通过对应属性行修改");
+            if (prop.second==value) return true;
+            PushUndo(L"修改导入元件参数"); prop.second=value; Touch(); Refresh(); return true;
+        }
         if (field == "logicModel" || field == "truthTable" || field == "delayTicks" || field == "clockPeriodTicks") {
             ComponentInstance candidate = comp;
             if (field == "logicModel") candidate.logicModel = value;
@@ -2747,6 +2766,7 @@ bool SchematicCanvas::ApplyPropertyEdit(const wxString& key, const wxString& tex
 
             PushUndo(L"修改封装");
             comp.footprint = value;
+            for (auto& prop : comp.properties) if (prop.first == "Footprint") prop.second = value;
             Touch();
             Refresh();
 

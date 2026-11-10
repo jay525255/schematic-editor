@@ -141,7 +141,12 @@ bool ValidateDocument(const SchematicDocument& doc, wxString* error)
                 return reject(L"导入图形参数不合法");
             for (const auto& p : g.points) if (!coordinate(p)) return reject(L"导入图形坐标不合法");
         }
-        for (const auto& p : comp.pins) if (p.exact && (!coordinate(p.endpoint) || !coordinate(p.anchor))) return reject(L"引脚坐标不合法");
+        std::set<wxString> pads;
+        for (size_t k=0;k<comp.pins.size();++k) {
+            const auto& p=comp.pins[k];
+            if (comp.imported && (!p.exact || p.pad.empty() || !pads.insert(p.pad).second)) return reject(L"导入引脚缺少精确坐标或物理编号重复");
+            if (p.exact && (!coordinate(p.endpoint) || !coordinate(p.anchor) || !coordinate(PinPosition(comp,static_cast<int>(k))))) return reject(L"引脚坐标不合法");
+        }
         if (comp.delayTicks < 1 || comp.delayTicks > 1000 || comp.clockPeriodTicks < 2 || comp.clockPeriodTicks > 10000 || comp.clockPeriodTicks % 2)
             return reject(L"数字仿真时间参数不合法");
     }

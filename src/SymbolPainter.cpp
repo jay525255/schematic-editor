@@ -747,7 +747,9 @@ void PaintSymbolLabels(wxGraphicsContext* gc,
     if (comp.imported) {
         for (const auto& g : comp.graphics) {
             if (g.points.empty() || (g.text.empty() && g.property.empty())) continue;
-            const wxString text = g.property == "Reference" ? comp.refdes : g.property == "Value" ? comp.value : g.text;
+            wxString text = g.property == "Reference" ? comp.refdes : g.property == "Value" ? comp.value : g.property == "Footprint" ? comp.footprint : g.text;
+            if (!g.property.empty() && g.property!="Reference" && g.property!="Value" && g.property!="Footprint")
+                for (const auto& prop : comp.properties) if (prop.first==g.property) text=prop.second;
             const auto at = place.Map(g.points[0].x,g.points[0].y);
             wxFont font(wxFontInfo(8).Family(wxFONTFAMILY_SWISS));
             font.SetPixelSize(wxSize(0,std::max(1,static_cast<int>(g.textSize*place.scale))));
