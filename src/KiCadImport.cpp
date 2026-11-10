@@ -178,16 +178,17 @@ class Converter {
         for(const auto& n:inst.children)if(n.list&&n.key()=="property")c.properties.push_back({W(n.value()),W(n.value(2))});
         auto t=transform(inst);int unit=inst.find("unit")?integer(inst.need("unit")):1;int style=inst.find("convert")?integer(inst.need("convert")):1;
         if(inst.find("body_style"))style=integer(inst.need("body_style"));
-        if(unit<1||style<1||style>2)throw std::runtime_error("Invalid symbol unit/body style");bool matched=false;
+        if(unit<1||style<1||style>2)throw std::runtime_error("Invalid symbol unit/body style");bool matched=false,specificUnits=false;
         const std::set<std::string> graphics={"polyline","rectangle","circle","arc","bezier","text"};
         auto contents=[&](const Node& parent){for(const auto& item:parent.children)if(item.list){auto key=item.key();if(key=="pin")pin(c,item,lib,t,power);else if(graphics.count(key))graphic(c,item,t);else if(key=="text_box"||key=="image")throw std::runtime_error("Unsupported graphic in embedded symbol: "+key);}};
         contents(lib);
         for(const auto& child:lib.children)if(child.list&&child.key()=="symbol") {
             auto name=child.value();auto last=name.rfind('_'),previous=last==std::string::npos?last:name.rfind('_',last-1);if(previous==std::string::npos)throw std::runtime_error("Invalid symbol unit identifier: "+name);
             auto u=name.substr(previous+1,last-previous-1),s=name.substr(last+1);
+            if(u!="0")specificUnits=true;
             if((u=="0"||u==std::to_string(unit))&&(s=="0"||s==std::to_string(style))){contents(child);if(u==std::to_string(unit))matched=true;}
         }
-        if(!matched)throw std::runtime_error("Missing unit/body style in symbol: "+id);
+        if(!matched&&specificUnits)throw std::runtime_error("Missing unit/body style in symbol: "+id);
         std::set<wxString> pads;for(const auto& p:c.pins)if(!pads.insert(p.pad).second)throw std::runtime_error("Stacked duplicate pad number not supported: "+c.refdes.utf8_string()+"."+p.pad.utf8_string());
         // Instance properties use absolute sheet coordinates, not the library transform.
         for(const auto& property:inst.children)if(property.list&&property.key()=="property"&&!hidden(property)&&property.find("at")){
