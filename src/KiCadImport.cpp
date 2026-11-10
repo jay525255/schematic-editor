@@ -176,7 +176,11 @@ class Converter {
         if(!refs.insert(c.refdes).second)throw std::runtime_error("Duplicate reference / multi-unit package not supported: "+c.refdes.utf8_string());
         bool power=lib.find("power")!=nullptr;c.pcbExcluded=power||(inst.find("on_board")&&inst.need("on_board").value()=="no");
         for(const auto& n:inst.children)if(n.list&&n.key()=="property")c.properties.push_back({W(n.value()),W(n.value(2))});
-        auto t=transform(inst);int unit=inst.find("unit")?integer(inst.need("unit")):1;int style=inst.find("convert")?integer(inst.need("convert")):1;
+        auto t=transform(inst);
+        c.xform=((360-t.angle)%360)/90;
+        if(t.mirror=="x")c.xform=4+(2-c.xform+4)%4;
+        else if(t.mirror=="y")c.xform=4+(4-c.xform)%4;
+        int unit=inst.find("unit")?integer(inst.need("unit")):1;int style=inst.find("convert")?integer(inst.need("convert")):1;
         if(inst.find("body_style"))style=integer(inst.need("body_style"));
         if(unit<1||style<1||style>2)throw std::runtime_error("Invalid symbol unit/body style");bool matched=false,specificUnits=false;
         const std::set<std::string> graphics={"polyline","rectangle","circle","arc","bezier","text"};

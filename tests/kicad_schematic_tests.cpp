@@ -31,7 +31,7 @@ int main(int argc,char**argv){try{
         for(auto& c:d.components){auto before=c;for(int n=0;n<4;++n)se::RotateComponent(c,1);for(size_t k=0;k<c.pins.size();++k)require(se::PinPosition(c,k)==se::PinPosition(before,k),"four imported-symbol rotations restore pin positions");
             se::MirrorComponent(c,true);se::MirrorComponent(c,true);for(size_t k=0;k<c.pins.size();++k)require(se::PinPosition(c,k)==se::PinPosition(before,k),"double mirror restores imported pin positions");require(c.graphics[0].points==before.graphics[0].points,"rotations and mirrors retain imported drawing");}
     }
-    auto d=load(fixtures+"/rectifier-9.kicad_sch");bool resistor=false,capacitor=false,power=false;for(const auto& c:d.components){resistor|=c.refdes=="R1";capacitor|=c.refdes=="C1";power|=c.netLabel=="GND";}require(resistor&&capacitor&&power,"real resistor capacitor and ground represented");
+    auto d=load(fixtures+"/rectifier-9.kicad_sch");bool resistor=false,capacitor=false,power=false;for(const auto& c:d.components){resistor|=c.refdes=="R1";if(c.refdes=="R1")require(c.xform==3,"KiCad counterclockwise 90 degrees retained in editable orientation");capacitor|=c.refdes=="C1";power|=c.netLabel=="GND";}require(resistor&&capacitor&&power,"real resistor capacitor and ground represented");
     const auto original=topology(d);
     auto bad=out+"/bad.kicad_sch";se::KiCadImportResult held;held.document=d;
     for(const wxString& text:{wxString("(kicad_sch (version 20250114)"),wxString("(kicad_sch (version nan))"),wxString("(kicad_sch (version 20250114) (lib_symbols) (bus))"),wxString("(kicad_sch (version 20990101) (lib_symbols))"),wxString("(kicad_sch (version 20250114) (lib_symbols) (symbol (lib_id \"missing:R\")))")}){

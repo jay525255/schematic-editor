@@ -137,7 +137,8 @@ int main(int argc,char**argv){
         const auto at=canvas->ScreenPoint({11811,9398});click(canvas,at);
         check(canvas->GetSelectedComponentIndex()==static_cast<int>(resistor),"native mouse selects imported resistor");
         check(input->MouseMove(canvas->ClientToScreen(at))&&input->MouseDown(),"native imported-symbol drag starts");pump();
-        check(input->MouseMove(canvas->ClientToScreen(at+wxPoint(20,20)))&&input->MouseUp(),"native imported-symbol drag ends");pump();
+        check(input->MouseMove(canvas->ClientToScreen(at+wxPoint(20,20))),"native imported-symbol drag moves");pump();
+        check(input->MouseUp(),"native imported-symbol drag ends");pump();
         check(canvas->GetComponents()[resistor].pos!=beforeMove&&partition(*canvas)==importedPartition,"native imported resistor moves with electrical connections");
         key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos==beforeMove&&partition(*canvas)==importedPartition,"undo restores imported symbol and wires");
         key('Y',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos!=beforeMove,"redo moves imported resistor");
