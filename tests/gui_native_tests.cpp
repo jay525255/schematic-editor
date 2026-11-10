@@ -161,8 +161,13 @@ int main(int argc,char**argv){
         const int originalWireCount=canvas->GetWireCount();
         key('W');click(canvas,canvas->ScreenPoint(branchStart));click(canvas,canvas->ScreenPoint(branchEnd));key(WXK_ESCAPE);
         check(canvas->GetWireCount()>originalWireCount&&partition(*canvas)==importedPartition,"native wiring adds a branch to an imported electrical pin");
+        const int branchWireCount=canvas->GetWireCount();
         click(canvas,canvas->ScreenPoint(branchStart+wxPoint(200,0)));key(WXK_DELETE);
-        check(canvas->GetWireCount()==originalWireCount&&partition(*canvas)==importedPartition,"native selection and Delete edit an imported circuit wire");
+        check(canvas->GetWireCount()==branchWireCount-1&&partition(*canvas)==importedPartition,"native selection and Delete edit an imported circuit wire");
+        // An off-grid KiCad terminal can route to a grid point using two segments.
+        // Undo deletion, then undo the complete branch operation, including both.
+        key('Z',wxMOD_CONTROL);key('Z',wxMOD_CONTROL);
+        check(canvas->GetWireCount()==originalWireCount&&partition(*canvas)==importedPartition,"native undo restores imported wiring after branch editing");
         check(screenshot("kicad-edited.png"),"save edited KiCad screenshot");
         auto importedSave=wxFileName(out,"kicad-native-roundtrip.ses").GetFullPath();fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'S',importedSave);
         check(wxFileExists(importedSave)&&!canvas->IsModified(),"native save stores imported editable document");
