@@ -1,4 +1,4 @@
-﻿#include "MainFrame.h"
+#include "MainFrame.h"
 #include "Ids.h"
 #include "SchematicIO.h"
 #include "KiCadExport.h"
@@ -157,6 +157,16 @@ int main(int argc,char**argv){
         {
             const int g=canvas->GetGridStep();const auto landed=canvas->GetComponents()[resistor].pos;
             check(landed.x%g==0&&landed.y%g==0,"dragging an off-grid symbol snaps it onto the grid");
+            // Rotating goes around the centre and swaps width/height, which pushes the
+            // top-left corner onto a half grid step; snapping has to put it back.
+            const auto rotBefore=canvas->GetComponents()[resistor];
+            key('R',wxMOD_CONTROL);pump();
+            const auto rotAfter=canvas->GetComponents()[resistor];
+            if(rotAfter.w==rotBefore.h&&rotAfter.h==rotBefore.w){
+                check(rotAfter.pos.x%g==0&&rotAfter.pos.y%g==0,"rotating an off-grid symbol leaves it on the grid");
+                key('Z',wxMOD_CONTROL);pump();
+                check(canvas->GetComponents()[resistor].pos==rotBefore.pos,"undo restores the pre-rotation position");
+            }
         }
         check(partition(*canvas)==importedPartition,"native imported resistor movement retains electrical connections");
         key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos==beforeMove&&partition(*canvas)==importedPartition,"undo restores imported symbol and wires");

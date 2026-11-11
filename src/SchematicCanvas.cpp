@@ -2559,7 +2559,19 @@ void SchematicCanvas::PasteClipboard()
                                ? SnapToGrid(m_cursorWorld)
                                : m_clip.anchor + wxPoint(m_gridStep * 2, m_gridStep * 2);
 
-    const wxPoint delta(target.x - m_clip.anchor.x, target.y - m_clip.anchor.y);
+    wxPoint delta(target.x - m_clip.anchor.x, target.y - m_clip.anchor.y);
+
+    // 打开吸附时，粘出来的元件也要落在网格上。
+    // 复制源本身可能在格子外（关吸附时放的 / 从 KiCad 导入的），
+    // 只对齐包围盒是不够的——包围盒左上角对齐了，元件相对包围盒的偏移照样是半格。
+    // 所以拿"第一个元件最终落在哪"来算一次修正量，整体平移（导线和文本跟着一起走，
+    // 相对位置不变）。
+    if (m_snapEnabled && !m_clip.components.empty())
+    {
+        const wxPoint landed(m_clip.components.front().pos.x + delta.x,
+                             m_clip.components.front().pos.y + delta.y);
+        delta += SnapToGrid(landed) - landed;
+    }
 
     PushUndo(L"粘贴");
 
@@ -2928,6 +2940,26 @@ void SchematicCanvas::TransformSelection(const std::function<void(ComponentInsta
     auto after = m_components;
     for (int ci : m_selComponents)
         if (ci >= 0 && ci < static_cast<int>(after.size())) apply(after[ci]);
+
+    // 旋转 / 翻转是"绕中心转"，宽高互换以后左上角会落到半格上
+    // （例：70×60 的元件在原点上转 90°，左上角变成 (5,-5)）。
+    // 打开吸附时要把整组元件平移回网格；用"一个公共位移"而不是各挪各的，
+    // 否则多选元件的相对位置会被打散。
+    if (m_snapEnabled && !m_selComponents.empty())
+    {
+        const int anchor = m_selComponents.front();
+        if (anchor >= 0 && anchor < static_cast<int>(after.size()))
+        {
+            const wxPoint shift = SnapToGrid(after[anchor].pos) - after[anchor].pos;
+            if (shift != wxPoint(0, 0))
+            {
+                for (int ci : m_selComponents)
+                    if (ci >= 0 && ci < static_cast<int>(after.size()))
+                        after[ci].pos += shift;
+            }
+        }
+    }
+
     auto wires = m_wires;
     if (!ReconnectChangedComponents(m_components, after, wires)) {
         if (OnStatusMessage) OnStatusMessage(L"变换已取消：当前位置会导致网络短接或断开，请先移到空白区域");
