@@ -48,6 +48,7 @@ private:
 
     // ---- 联动刷新 ----
     void SyncViewState();      // 把画布状态同步到菜单勾选与工具栏按钮
+    void SyncSimState();       // 把仿真运行状态同步到"仿真"按钮的按下态与菜单勾
     void UpdateStatusBar();    // 刷新状态栏
     void UpdateProperties();   // 刷新属性表
     void SetHint(const wxString& text);

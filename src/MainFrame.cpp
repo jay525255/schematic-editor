@@ -1,4 +1,4 @@
-#include "MainFrame.h"
+﻿#include "MainFrame.h"
 #include "KiCadImport.h"
 #include "NetlistImport.h"
 
@@ -418,7 +418,7 @@ void MainFrame::CreateMenus()
     toolsMenu->Append(ID_TOOLS_GENERATE_BOM,     L"生成物料清单 (BOM)...");
     toolsMenu->AppendSeparator();
     toolsMenu->Append(ID_TOOLS_SIMULATOR, L"电路仿真器...");
-    toolsMenu->Append(ID_SIM_RUN, L"仿真：运行 / 暂停\tF5");
+    toolsMenu->AppendCheckItem(ID_SIM_RUN, L"仿真：运行 / 暂停\tF5");   // 做个勾：运行时菜单里也打勾
     toolsMenu->Append(ID_SIM_STOP, L"仿真：重置\tShift+F5");
     toolsMenu->Append(ID_SIM_TICK,        L"仿真：暂停并单步\tF6");
     toolsMenu->AppendSeparator();
@@ -529,7 +529,9 @@ void MainFrame::CreateToolBars()
 
     // ---- 其它 ----
     m_toolBar->AddTool(ID_VIEW_RESET, L"清空画布", Icon(kSvgClear),    L"清空画布上的所有元件（一次性全清，不能只删一个）");
-    m_toolBar->AddTool(ID_SIM_RUN,    L"仿真",     Icon(kSvgSimulate), L"运行逻辑仿真 (任务 6)");
+    // 仿真按钮做成"开关型"：仿真在跑时显示按下状态，一眼能看出当前是运行还是暂停
+    m_toolBar->AddCheckTool(ID_SIM_RUN, L"仿真", Icon(kSvgSimulate), wxNullBitmap,
+                            L"运行 / 暂停逻辑仿真 (F5)");
 
     m_toolBar->Realize();
 
@@ -630,6 +632,22 @@ void MainFrame::SyncViewState()
         bar->Check(ID_VIEW_SNAP_GRID, m_canvas->IsSnapEnabled());
         bar->Check(ID_VIEW_CROSSHAIR, m_canvas->IsCrosshairVisible());
     }
+
+    // 仿真按钮是开关型：新建 / 打开 / 重置之后要跟着画布的运行状态复位
+    SyncSimState();
+}
+
+// 让"仿真"按钮的按下状态与菜单里的勾，始终等于画布的真实运行状态。
+// 只在这一个地方读 IsSimulating()，避免三处各写一遍、以后漏改。
+void MainFrame::SyncSimState()
+{
+    const bool running = m_canvas->IsSimulating();
+
+    if (m_toolBar)
+        m_toolBar->ToggleTool(ID_SIM_RUN, running);
+
+    if (wxMenuBar* bar = GetMenuBar())
+        bar->Check(ID_SIM_RUN, running);
 }
 
 void MainFrame::UpdateStatusBar()
@@ -1675,8 +1693,7 @@ void MainFrame::OnCommand(wxCommandEvent& event)
                 m_canvas->StartSimulation();
             }
 
-            if (m_toolBar)
-                m_toolBar->ToggleTool(ID_SIM_RUN, m_canvas->IsSimulating());
+            SyncSimState();
 
             RefreshWaveform();
             UpdateStatusBar();
@@ -1697,8 +1714,7 @@ void MainFrame::OnCommand(wxCommandEvent& event)
 
                 m_canvas->StartSimulation();
 
-                if (m_toolBar)
-                    m_toolBar->ToggleTool(ID_SIM_RUN, m_canvas->IsSimulating());
+                SyncSimState();
             }
 
             TextReportDialog dialog(this,
@@ -1714,7 +1730,7 @@ void MainFrame::OnCommand(wxCommandEvent& event)
 
         case ID_SIM_STOP:
             m_canvas->StopSimulation();
-            if (m_toolBar) m_toolBar->ToggleTool(ID_SIM_RUN, false);
+            SyncSimState();
             RefreshWaveform();
             SetHint(L"仿真已重置"); return;
         case ID_SIM_TICK:

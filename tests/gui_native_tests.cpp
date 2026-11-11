@@ -1,10 +1,11 @@
-#include "MainFrame.h"
+﻿#include "MainFrame.h"
 #include "Ids.h"
 #include "SchematicIO.h"
 #include "KiCadExport.h"
 #include <set>
 #include <map>
 #include <wx/uiaction.h>
+#include <wx/toolbar.h>
 #include <wx/propgrid/propgrid.h>
 #include <wx/dcscreen.h>
 #include <wx/dcmemory.h>
@@ -109,8 +110,17 @@ int main(int argc,char**argv){
         key('S',wxMOD_CONTROL);
         fileCommand(wxMOD_CONTROL,'O',wxString::FromUTF8(argv[2]));
         check(canvas->GetComponentCount()==3,"native open loads dynamic AND circuit");
+        // The simulation button must be a real toggle: if it were a plain
+        // button, the pressed state would never show and users could not tell
+        // whether their click started or stopped the runtime.
+        auto* bar=frame->GetToolBar();
+        check(bar!=nullptr,"main frame owns the real toolbar");
+        auto* simTool=bar->FindById(se::ID_SIM_RUN);
+        check(simTool!=nullptr&&simTool->GetKind()==wxITEM_CHECK,"simulation button is a check tool, not a plain button");
+        check(!bar->GetToolState(se::ID_SIM_RUN),"simulation button starts unpressed");
         key(WXK_F5);pump(450);check(canvas->IsSimulating()&&canvas->GetSimulator().RuntimeTime()>=3,"native Run advances real timer");
-        key(WXK_F5);check(!canvas->IsSimulating(),"native Pause stops automatic timer");
+        check(bar->GetToolState(se::ID_SIM_RUN),"simulation button shows pressed while running");
+        key(WXK_F5);check(!canvas->IsSimulating(),"native Pause stops automatic timer");check(!bar->GetToolState(se::ID_SIM_RUN),"simulation button releases on pause");
         auto paused=canvas->GetSimulator().RuntimeTime();pump(350);
         check(canvas->GetSimulator().RuntimeTime()==paused,"pause preserves exact simulation time");
         auto outputNet=canvas->GetNetGraph().pinNet[2][2];
@@ -125,7 +135,7 @@ int main(int argc,char**argv){
         check(screenshot("dynamic-simulation.png"),"save actual dynamic signal screenshot");
         check(differentScreenshots("editing.png","dynamic-simulation.png"),"different circuit stages have fresh distinct screenshots");
         key(WXK_F5);pump(250);key(WXK_F5);check(canvas->GetSimulator().RuntimeTime()>paused+2,"native Resume continues existing timeline");
-        key(WXK_F5,wxMOD_SHIFT);check(!canvas->GetSimulator().RuntimeReady(),"native Reset clears pending events");
+        key(WXK_F5,wxMOD_SHIFT);check(!canvas->GetSimulator().RuntimeReady(),"native Reset clears pending events");check(!bar->GetToolState(se::ID_SIM_RUN),"reset leaves the simulation button unpressed");
         canvas->MarkSaved();
         fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'I',wxString::FromUTF8(argv[3]));
         check(canvas->GetComponentCount()==9&&canvas->GetWireCount()==15&&canvas->IsModified(),"native KiCad import menu shortcut loads real rectifier and marks unsaved");
