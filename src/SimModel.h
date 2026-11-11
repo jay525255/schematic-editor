@@ -3,6 +3,8 @@
 
 #include <wx/string.h>
 
+#include <cstdint>
+#include <deque>
 #include <vector>
 
 #include "NetModel.h"
@@ -34,7 +36,14 @@ enum class SimKind
     FullAdder,     // 输出 S, Cout
     Source,        // 驱动一个常量：输入引脚 / 常量
     Clock,         // 驱动一个方波
-    Sink           // 只读取：输出引脚 / 探针 / 网络标签
+    Sink,          // 只读取：输出引脚 / 探针 / 网络标签
+
+    // ---- 时序元件（有记忆，稳态求值时输出记为 X，只有定时运行才有时序）----
+    DFlipFlop,
+    JKFlipFlop,
+    Counter,
+    Rom,
+    Ram
 };
 
 // 按元件名判定仿真行为（元件名来自元件库，随文件保存）
@@ -87,8 +96,32 @@ public:
     wxString BuildReport(const std::vector<ComponentInstance>& components,
                          const NetGraph&                       graph) const;
 
+    // ========================================================
+    //  波形记录（任务：波形窗口）
+    //
+    //  每跑一步就把所有网络的逻辑值记一格，形成"信号 × 时间"的二维表。
+    //  只保留最近 kMaxSamples 步（环形），否则跑久了内存会一直涨。
+    // ========================================================
+    static const size_t kMaxSamples = 2000;
+
+    int                          WaveCount() const { return static_cast<int>(m_wave.size()); }
+    const wxString&              WaveLabel(int net) const;
+    const std::deque<signed char>& WaveSamples(int net) const;
+    std::uint64_t                WaveFirstTick() const { return m_waveFirstTick; }
+    void                         ClearWave();
+
 private:
+    struct WaveTrace
+    {
+        wxString               label;
+        std::deque<signed char> samples;   // -1 = X，0 / 1 = 逻辑值，2 = 冲突
+    };
+
+    void RecordWave();
+
     DigitalSimulator m_runtime;
+    std::vector<WaveTrace> m_wave;
+    std::uint64_t          m_waveFirstTick = 0;
     bool m_temporal = false;
     std::vector<int> m_runtimeIds;
     std::vector<LogicValue> m_netValues;   // 与 nets 平行

@@ -31,6 +31,8 @@
 namespace se
 {
 
+class WaveformWindow;
+
 class MainFrame : public wxFrame
 {
 public:
@@ -79,10 +81,15 @@ private:
     void AddRecentFile(const wxString& path);
     void RebuildRecentMenu();
 
+    // ---- 仿真波形窗口（独立窗口，首次打开时创建，关闭只是隐藏）----
+    void ShowWaveformWindow();
+    void RefreshWaveform();
+
     // ---- 面板 ----
     LibraryPanel*    m_library = nullptr;
     PropertyPanel*   m_props   = nullptr;
     SchematicCanvas* m_canvas  = nullptr;
+    WaveformWindow*  m_waveform = nullptr;   // 懒创建；关闭时只隐藏
 
     wxSplitterWindow* m_splitOuter = nullptr;   // 左：元件库 | 右：其余
     wxSplitterWindow* m_splitRight = nullptr;   // 左：绘图区 | 右：属性表

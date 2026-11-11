@@ -1,4 +1,4 @@
-#include "SymbolPainter.h"
+﻿#include "SymbolPainter.h"
 
 #include <wx/brush.h>
 #include <wx/pen.h>
@@ -42,6 +42,10 @@ ShapeSpec SpecOf(const wxString& name, ComponentKind kind)
     if (name.Contains(L"半加") || name.Contains(L"全加"))  { spec.shape = SymbolShape::Box;      return spec; }
     if (name.Contains(L"运放") || name.Contains(L"运算放大")) { spec.shape = SymbolShape::OpAmp;   return spec; }
     if (name.Contains(L"晶体管"))                          { spec.shape = SymbolShape::Transistor; return spec; }
+
+    // ---- 时序器件：一律画成矩形，靠框里的字（D / JK / CTR / ROM / RAM）区分 ----
+    if (name.Contains(L"触发器") || name.Contains(L"计数器")) { spec.shape = SymbolShape::Box; return spec; }
+    if (name.Contains(L"ROM") || name.Contains(L"RAM"))       { spec.shape = SymbolShape::Box; return spec; }
 
     // ---- 分立器件 ----
     if (name == L"电阻")   { spec.shape = SymbolShape::Resistor;  return spec; }
@@ -398,13 +402,45 @@ void PaintSymbolBody(wxGraphicsContext* gc,
 
             gc->DrawRectangle(tl.m_x, tl.m_y, w * s, h * s);
 
-            // 左上角的 “+” 记号（Logisim 的加法器就是个带加号的方框）。
-            // 记号要够大：缩到 18 像素的树图标里，太小就完全看不见了。
-            const double cx = w * 0.28;
-            const double cy = h * 0.30;
+            // 框里的记号：加法器是加号，时序器件是它的名字缩写。
+            // （触发器 D / JK、计数器 CTR、存储器 ROM / RAM —— 光看矩形分不出来。）
+            wxString caption;
+            if (comp.name.Contains(L"触发器"))
+                caption = comp.name.Contains(L"JK") ? L"JK" : L"D";
+            else if (comp.name.Contains(L"计数器"))
+                caption = L"CTR";
+            else if (comp.name.Contains(L"ROM"))
+                caption = L"ROM";
+            else if (comp.name.Contains(L"RAM"))
+                caption = L"RAM";
 
-            Stroke(gc, m, cx - w * 0.16, cy, cx + w * 0.16, cy);
-            Stroke(gc, m, cx, cy - h * 0.16, cx, cy + h * 0.16);
+            if (!caption.IsEmpty())
+            {
+                // 字号跟着缩放走；下限 6pt 是为了 18×18 的树图标也能看见。
+                const int pt = std::max(6, static_cast<int>(h * s * 0.26));
+
+                gc->SetFont(wxFontInfo(pt).Bold(), outline);
+
+                double tw = 0.0, th = 0.0;
+                gc->GetTextExtent(caption, &tw, &th);          // 必须先 SetFont 再量
+
+                const wxPoint2DDouble centre = m(w / 2.0, h / 2.0);
+                gc->DrawText(caption, centre.m_x - tw / 2, centre.m_y - th / 2);
+
+                // 还原成正文常用的字号：后面画引脚名/位号时都会自己再 SetFont，
+                // 但万一有路径忘了设，也不会突然变成粗体大字。
+                gc->SetFont(wxFontInfo(9), outline);
+            }
+            else
+            {
+                // 左上角的 “+” 记号（Logisim 的加法器就是个带加号的方框）。
+                // 记号要够大：缩到 18 像素的树图标里，太小就完全看不见了。
+                const double cx = w * 0.28;
+                const double cy = h * 0.30;
+
+                Stroke(gc, m, cx - w * 0.16, cy, cx + w * 0.16, cy);
+                Stroke(gc, m, cx, cy - h * 0.16, cx, cy + h * 0.16);
+            }
 
             break;
         }

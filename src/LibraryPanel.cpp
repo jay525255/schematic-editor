@@ -265,9 +265,6 @@ LibraryPanel::LibraryPanel(wxWindow* parent)
     title->SetFont(titleFont);
     title->SetForegroundColour(wxColour(40, 60, 100));
 
-    m_subtitle = new wxStaticText(this, wxID_ANY, wxEmptyString);
-    m_subtitle->SetForegroundColour(wxColour(130, 135, 145));
-
     // ---- 搜索框 ----
     m_search = new wxSearchCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition,
                                 wxDefaultSize, wxTE_PROCESS_ENTER);
@@ -298,7 +295,6 @@ LibraryPanel::LibraryPanel(wxWindow* parent)
     // ---- 布局 ----
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(title,     0, wxLEFT | wxRIGHT | wxTOP, 8);
-    sizer->Add(m_subtitle, 0, wxLEFT | wxRIGHT | wxTOP, 8);
     sizer->Add(m_search,  0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 8);
     sizer->Add(line,      0, wxEXPAND | wxTOP, 6);
     sizer->Add(m_tree,    1, wxEXPAND | wxALL, 2);
@@ -413,8 +409,6 @@ void LibraryPanel::BuildTree()
     }
 
     m_rebuilding = false;
-
-    UpdateHeader();
 }
 
 // ------------------------------------------------------------
@@ -431,33 +425,6 @@ void LibraryPanel::ApplyFilter()
 }
 
 // ------------------------------------------------------------
-void LibraryPanel::UpdateHeader()
-{
-    if (!m_subtitle)
-        return;
-
-    const int total = ComponentCatalog::ComponentCount();
-    const int mine  = ComponentCatalog::UserComponentCount();
-
-    const wxString filter = m_search ? m_search->GetValue().Trim() : wxString();
-
-    wxString text;
-
-    if (filter.IsEmpty())
-    {
-        text = wxString::Format(L"共 %d 个元件", total);
-
-        if (mine > 0)
-            text += wxString::Format(L"（含 %d 个自定义 ★）", mine);
-    }
-    else
-    {
-        text = wxString::Format(L"匹配 %d / %d 个元件", m_visible, total);
-    }
-
-    m_subtitle->SetLabel(text);
-    m_subtitle->GetParent()->Layout();
-}
 
 // ------------------------------------------------------------
 void LibraryPanel::Reload()

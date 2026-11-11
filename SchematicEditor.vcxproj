@@ -136,11 +136,13 @@
     <ClCompile Include="src\EditingTools.cpp" />
     <ClCompile Include="src\KiCadExport.cpp" />
     <ClCompile Include="src\KiCadImport.cpp" />
+    <ClCompile Include="src\NetlistImport.cpp" />
     <ClCompile Include="src\SchematicIO.cpp" />
     <ClCompile Include="src\SimModel.cpp" />
     <ClCompile Include="src\DigitalSimulator.cpp" />
     <ClCompile Include="src\SymbolPainter.cpp" />
     <ClCompile Include="src\TextReportDialog.cpp" />
+    <ClCompile Include="src\WaveformWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Ids.h" />
@@ -151,6 +153,7 @@
     <ClInclude Include="src\EditingTools.h" />
     <ClInclude Include="src\KiCadExport.h" />
     <ClInclude Include="src\KiCadImport.h" />
+    <ClInclude Include="src\NetlistImport.h" />
     <ClInclude Include="src\SchematicIO.h" />
     <ClInclude Include="src\SimModel.h" />
     <ClInclude Include="src\DigitalSimulator.h" />
@@ -159,6 +162,7 @@
     <ClInclude Include="src\LibraryPanel.h" />
     <ClInclude Include="src\PropertyPanel.h" />
     <ClInclude Include="src\TextReportDialog.h" />
+    <ClInclude Include="src\WaveformWindow.h" />
     <ClInclude Include="src\MainFrame.h" />
   </ItemGroup>
   <ItemGroup>

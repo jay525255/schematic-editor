@@ -49,10 +49,14 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\KiCadImport.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="src\NetlistImport.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="src\SchematicIO.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\TextReportDialog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\WaveformWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -85,10 +89,14 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\KiCadImport.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="src\NetlistImport.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="src\SchematicIO.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\TextReportDialog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\WaveformWindow.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\Ids.h">

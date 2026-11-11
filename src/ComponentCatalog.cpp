@@ -1,4 +1,4 @@
-#include "ComponentCatalog.h"
+﻿#include "ComponentCatalog.h"
 #include "DigitalSimulator.h"
 #include <wx/wfstream.h>
 
@@ -200,6 +200,19 @@ const std::vector<CategoryDef>& BuiltinData()
                 { L"同或门", L"U", L"两输入同或门，Y = /(A ⊕ B)",   2, 1, ComponentKind::Logic, 60, 40, L"DIP-14", L"XNOR2" },
                 { L"半加器", L"U", L"半加器：A/B 输入，S 和、C 进位", 2, 2, ComponentKind::Logic, 64, 46, L"DIP-14", L"HA" },
                 { L"全加器", L"U", L"全加器：A/B/Cin，S 和、C 进位", 3, 2, ComponentKind::Logic, 68, 52, L"DIP-16", L"FA" },
+            }
+        },
+        {
+            L"时序逻辑",
+            {
+                // 这一组的元件"有记忆"：输出不只取决于当前输入，
+                // 还取决于时钟上一个上升沿时存进来的值。
+                // logicModel 显式写出来，这样元件改名了也不会丢失行为。
+                { L"D 触发器",   L"U", L"D 触发器：CLK 上升沿采样 D，输出 Q / QN", 2, 2, ComponentKind::Logic,  70,  60, L"DIP-14", L"DFF",     false, L"dff" },
+                { L"JK 触发器",  L"U", L"JK 触发器：J 置位、K 复位、J=K=1 翻转",   3, 2, ComponentKind::Logic,  80,  60, L"DIP-14", L"JKFF",    false, L"jkff" },
+                { L"4 位计数器", L"U", L"4 位二进制计数器：CLK 上升沿加 1，RST 清零", 2, 4, ComponentKind::Logic,  90, 100, L"DIP-16", L"CNT4",    false, L"counter" },
+                { L"ROM 16×4",   L"U", L"16×4 只读存储器：A0~A3 选址，D0~D3 输出", 4, 4, ComponentKind::Logic,  90, 100, L"DIP-16", L"ROM16X4", false, L"rom" },
+                { L"RAM 16×4",   L"U", L"16×4 读写存储器：WE 上升沿写入，读为异步", 9, 4, ComponentKind::Logic, 110, 200, L"DIP-24", L"RAM16X4", false, L"ram" },
             }
         },
         {

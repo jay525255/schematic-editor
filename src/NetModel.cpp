@@ -210,12 +210,32 @@ std::vector<Pin> MakePins(const wxString& compName,
 
         case ComponentKind::Logic:
         default:
+        {
+            // 时序元件的引脚名是固定的（D/CLK、Q/QN、A0~A3 …），
+            // 不能套用逻辑门的 A/B/C + Y 那套命名，否则用户连线时看不懂。
+            std::vector<wxString> inNames, outNames;
+            if (compName.Contains(L"JK 触发器")) {
+                inNames = { L"J", L"K", L"CLK" };                       outNames = { L"Q", L"QN" };
+            } else if (compName.Contains(L"触发器")) {
+                inNames = { L"D", L"CLK" };                             outNames = { L"Q", L"QN" };
+            } else if (compName.Contains(L"计数器")) {
+                inNames = { L"CLK", L"RST" };                           outNames = { L"Q0", L"Q1", L"Q2", L"Q3" };
+            } else if (compName.Contains(L"ROM")) {
+                inNames = { L"A0", L"A1", L"A2", L"A3" };               outNames = { L"D0", L"D1", L"D2", L"D3" };
+            } else if (compName.Contains(L"RAM")) {
+                inNames = { L"A0", L"A1", L"A2", L"A3", L"WE",
+                            L"D0", L"D1", L"D2", L"D3" };               outNames = { L"DQ0", L"DQ1", L"DQ2", L"DQ3" };
+            }
+
             for (int i = 0; i < inputs; ++i)
-                pins.push_back({ InputPinName(i), PinDir::Input, Side::Left, i, inputs });
+                pins.push_back({ i < static_cast<int>(inNames.size()) ? inNames[i] : InputPinName(i),
+                                 PinDir::Input, Side::Left, i, inputs });
 
             for (int i = 0; i < outputs; ++i)
-                pins.push_back({ OutputPinName(compName, i), PinDir::Output, Side::Right, i, outputs });
+                pins.push_back({ i < static_cast<int>(outNames.size()) ? outNames[i] : OutputPinName(compName, i),
+                                 PinDir::Output, Side::Right, i, outputs });
             break;
+        }
     }
 
     // 引脚序号：按生成顺序 1,2,3…（PCB 网表按序号引用引脚）

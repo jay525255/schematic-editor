@@ -52,7 +52,6 @@ public:
 private:
     void BuildTree();
     void ApplyFilter();
-    void UpdateHeader();
     void OnSelectionChanged(wxTreeEvent& event);
     void OnItemActivated(wxTreeEvent& event);
     void OnSearchChanged(wxCommandEvent& event);
@@ -63,7 +62,6 @@ private:
     int IconFor(const ComponentDef& def);
 
     wxSearchCtrl*     m_search   = nullptr;
-    wxStaticText*     m_subtitle = nullptr;
     wxTreeCtrl*       m_tree     = nullptr;
     SymbolPreview*    m_preview  = nullptr;
     wxImageList*      m_images   = nullptr;

@@ -1,5 +1,6 @@
 #include "MainFrame.h"
 #include "KiCadImport.h"
+#include "NetlistImport.h"
 
 #include <wx/aboutdlg.h>
 #include <wx/artprov.h>
@@ -16,6 +17,7 @@
 #include "SchematicIO.h"
 #include "KiCadExport.h"
 #include "TextReportDialog.h"
+#include "WaveformWindow.h"
 
 namespace se
 {
@@ -271,6 +273,7 @@ void MainFrame::CreateMenus()
     importMenu->Append(ID_FILE_IMPORT, L"导入原理图 (.ses)...");
     fileMenu->AppendSubMenu(importMenu, L"导入");
     fileMenu->Append(ID_FILE_IMPORT_KICAD, L"导入 KiCad 原理图...\tCtrl+Shift+I");
+    fileMenu->Append(ID_FILE_IMPORT_NETLIST, L"导入网表 (.net)...");
 
     wxMenu* exportMenu = new wxMenu;
     exportMenu->Append(ID_FILE_EXPORT, L"导出网表 (.net)...");
@@ -337,6 +340,9 @@ void MainFrame::CreateMenus()
 
     viewMenu->AppendSeparator();
     viewMenu->AppendCheckItem(ID_VIEW_FULLSCREEN, L"全屏模式\tF11");
+
+    // 波形窗口是独立窗口：可以和主窗口并排看，所以放在"视图"而不是"工具"
+    viewMenu->Append(ID_VIEW_WAVEFORM, L"仿真波形窗口\tF7");
 
     menuBar->Append(viewMenu, L"视图(&V)");
 
@@ -1265,6 +1271,33 @@ void MainFrame::OnCharHook(wxKeyEvent& event)
 //  命令统一入口
 // ============================================================
 
+// ============================================================
+//  仿真波形窗口
+//
+//  懒创建：第一次点"视图 → 仿真波形窗口"才建，之后关闭只是 Hide()。
+//  这样反复开关不会反复重建窗口，波形也不会白丢。
+// ============================================================
+void MainFrame::ShowWaveformWindow()
+{
+    if (!m_waveform)
+    {
+        // 用回调而不是保存指针：窗口比画布活得久时也不会拿到野指针
+        m_waveform = new WaveformWindow(this, [this]() -> const Simulator* {
+            return m_canvas ? &m_canvas->GetSimulator() : nullptr;
+        });
+    }
+
+    m_waveform->Show();
+    m_waveform->Raise();
+    m_waveform->RefreshView();
+}
+
+void MainFrame::RefreshWaveform()
+{
+    if (m_waveform && m_waveform->IsShown())
+        m_waveform->RefreshView();
+}
+
 void MainFrame::OnCommand(wxCommandEvent& event)
 {
     switch (event.GetId())
@@ -1308,6 +1341,51 @@ void MainFrame::OnCommand(wxCommandEvent& event)
             }
             return;
         }
+        case ID_FILE_IMPORT_NETLIST:
+        {
+            wxFileDialog dialog(this, L"导入网表", wxEmptyString, wxEmptyString,
+                                L"网表文件 (*.net)|*.net|所有文件 (*.*)|*.*",
+                                wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+            if (dialog.ShowModal() != wxID_OK)
+                return;
+
+            NetlistImportResult result;
+            wxString            error;
+            if (!ImportNetlistFile(dialog.GetPath(), result, error))
+            {
+                wxMessageBox(error, L"导入网表", wxOK | wxICON_ERROR, this);
+                return;
+            }
+
+            if (!MaybeSave())
+                return;
+
+            const auto& doc = result.document;
+            m_canvas->SetDocument(doc.components, doc.wires, doc.texts, doc.gridStep, doc.gridVisible,
+                                  doc.snapEnabled, doc.zoom);
+            m_canvas->ZoomFit();
+            m_library->ClearSelection();
+            m_currentFile.clear();
+
+            UpdateTitle();
+            SyncViewState();
+            UpdateProperties();
+            UpdateStatusBar();
+
+            SetHint(wxString::Format(L"已导入网表：%d 个元件，%d 个网络，%d 段导线；符号是通用矩形，只表达连接关系",
+                                     result.componentCount, result.netCount, result.wireCount));
+
+            if (!result.warnings.empty())
+            {
+                wxString message = L"网表已导入，以下情况需要留意：\n";
+                for (const auto& warning : result.warnings)
+                    message += warning + "\n";
+
+                wxMessageBox(message, L"网表导入说明", wxOK | wxICON_INFORMATION, this);
+            }
+            return;
+        }
+
         case ID_FILE_IMPORT:
             // 导入 = 打开一份 .ses（与“打开”同一套逻辑）
             DoOpenSchematic();
@@ -1467,6 +1545,11 @@ void MainFrame::OnCommand(wxCommandEvent& event)
             ShowFullScreen(event.IsChecked());
             return;
 
+        case ID_VIEW_WAVEFORM:
+            ShowWaveformWindow();
+            SetHint(L"波形窗口已打开（可与主窗口并排）；仿真每跑一步会自动记录一条");
+            return;
+
         // ---------------- 工具 ----------------
         case ID_TOOL_SELECT:
             m_canvas->SetTool(SchematicCanvas::ToolSelect);
@@ -1595,6 +1678,7 @@ void MainFrame::OnCommand(wxCommandEvent& event)
             if (m_toolBar)
                 m_toolBar->ToggleTool(ID_SIM_RUN, m_canvas->IsSimulating());
 
+            RefreshWaveform();
             UpdateStatusBar();
             return;
         }
@@ -1631,9 +1715,11 @@ void MainFrame::OnCommand(wxCommandEvent& event)
         case ID_SIM_STOP:
             m_canvas->StopSimulation();
             if (m_toolBar) m_toolBar->ToggleTool(ID_SIM_RUN, false);
+            RefreshWaveform();
             SetHint(L"仿真已重置"); return;
         case ID_SIM_TICK:
             m_canvas->TickClock();
+            RefreshWaveform();
             UpdateStatusBar();
             return;
 

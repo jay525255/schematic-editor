@@ -43,6 +43,13 @@ SimKind SimKindOf(const wxString& compName)
     if (compName == L"常量")     return SimKind::Source;
     if (compName == L"时钟")     return SimKind::Clock;
 
+    // ---- 时序元件 ----
+    if (compName.Contains(L"JK 触发器")) return SimKind::JKFlipFlop;
+    if (compName.Contains(L"触发器"))    return SimKind::DFlipFlop;
+    if (compName.Contains(L"计数器"))    return SimKind::Counter;
+    if (compName.Contains(L"ROM"))       return SimKind::Rom;
+    if (compName.Contains(L"RAM"))       return SimKind::Ram;
+
     // ---- 观察端 ----
     if (compName == L"输出引脚") return SimKind::Sink;
     if (compName == L"探针")     return SimKind::Sink;
@@ -515,7 +522,52 @@ bool Simulator::StartRuntime(const std::vector<ComponentInstance>& components, c
     m_running = m_temporal;
     m_unresolvedNets = 0; m_hasConflict = false;
     for (int value : m_runtime.Values()) { m_unresolvedNets += value < 0; m_hasConflict |= value == 2; }
+
+    // 波形：网络名作为通道名，先把第 0 拍的采样记下来
+    ClearWave();
+    m_wave.resize(graph.nets.size());
+    for (size_t n = 0; n < graph.nets.size(); ++n)
+        m_wave[n].label = graph.nets[n].name;
+    if (m_temporal) RecordWave();
     return m_temporal;
+}
+
+void Simulator::ClearWave()
+{
+    m_wave.clear();
+    m_waveFirstTick = 0;
+}
+
+void Simulator::RecordWave()
+{
+    if (!m_temporal) return;
+
+    const std::vector<int>& values = m_runtime.Values();
+    if (m_wave.size() != values.size())
+        m_wave.resize(values.size());
+
+    for (size_t n = 0; n < values.size() && n < m_wave.size(); ++n)
+    {
+        std::deque<signed char>& samples = m_wave[n].samples;
+        samples.push_back(static_cast<signed char>(values[n]));
+        if (samples.size() > kMaxSamples) samples.pop_front();
+    }
+
+    const std::uint64_t time = m_runtime.Time();
+    const std::uint64_t keep = static_cast<std::uint64_t>(kMaxSamples);
+    m_waveFirstTick = time + 1 >= keep ? time + 1 - keep : 0;
+}
+
+const wxString& Simulator::WaveLabel(int net) const
+{
+    static const wxString kEmpty;
+    return net >= 0 && net < static_cast<int>(m_wave.size()) ? m_wave[net].label : kEmpty;
+}
+
+const std::deque<signed char>& Simulator::WaveSamples(int net) const
+{
+    static const std::deque<signed char> kEmpty;
+    return net >= 0 && net < static_cast<int>(m_wave.size()) ? m_wave[net].samples : kEmpty;
 }
 
 bool Simulator::AdvanceRuntime()
@@ -523,6 +575,7 @@ bool Simulator::AdvanceRuntime()
     if (!RuntimeReady() || !m_runtime.Advance()) return false;
     m_unresolvedNets = 0; m_hasConflict = false;
     for (int value : m_runtime.Values()) { m_unresolvedNets += value < 0; m_hasConflict |= value == 2; }
+    RecordWave();
     return true;
 }
 
