@@ -2103,7 +2103,34 @@ void SchematicCanvas::BeginDrag(const wxPoint& world)
 void SchematicCanvas::UpdateDrag(const wxPoint& world)
 {
     if (!m_dragging) return;
-    const wxPoint delta = SnapToGrid(world - m_dragStartWorld);
+
+    // 吸附要作用在"元件最终落在哪"，而不是"这一下拖了多远"。
+    //
+    // 原先写的是 delta = SnapToGrid(world - 起点)：这只会把"位移"取整，
+    // 于是关掉吸附时放到格子外（或从 KiCad 导入）的元件，再怎么拖都只是
+    // 整格平移，永远差着那半格，看起来就像"只移动了一个网格的距离"。
+    wxPoint delta = world - m_dragStartWorld;
+    if (m_snapEnabled && !m_selComponents.empty() && !m_dragBaseComponents.empty())
+    {
+        // 以"鼠标按下时抓住的那个元件"为锚点；框选多个时退化成第一个。
+        int anchor = m_selComponents.front();
+        for (int index : m_selComponents)
+        {
+            if (index < 0 || index >= static_cast<int>(m_dragBaseComponents.size())) continue;
+            if (BoxOf(m_dragBaseComponents[index]).Inflate(kPinLen).Contains(m_dragStartWorld))
+            {
+                anchor = index;
+                break;
+            }
+        }
+
+        if (anchor >= 0 && anchor < static_cast<int>(m_dragBaseComponents.size()))
+        {
+            const wxPoint base = m_dragBaseComponents[anchor].pos;
+            delta = SnapToGrid(base + delta) - base;   // 让被抓住的元件左上角落到网格上
+        }
+    }
+
     if (delta == wxPoint(0, 0) && !m_dragMoved) return;
     if (!m_dragMoved) { PushUndo(L"移动元件及连接线"); m_dragMoved = true; }
     m_components = m_dragBaseComponents;

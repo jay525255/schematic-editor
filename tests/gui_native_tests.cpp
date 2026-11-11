@@ -152,6 +152,12 @@ int main(int argc,char**argv){
         check(input->MouseMove(canvas->ClientToScreen(at+wxPoint(20,20))),"native imported-symbol drag moves");pump();
         check(input->MouseUp(),"native imported-symbol drag ends");pump();
         check(canvas->GetComponents()[resistor].pos!=beforeMove,"native imported resistor changes position");
+        // An off-grid (imported) symbol must land back on the grid when snapping
+        // is on; snapping the movement delta instead would keep it off-grid forever.
+        {
+            const int g=canvas->GetGridStep();const auto landed=canvas->GetComponents()[resistor].pos;
+            check(landed.x%g==0&&landed.y%g==0,"dragging an off-grid symbol snaps it onto the grid");
+        }
         check(partition(*canvas)==importedPartition,"native imported resistor movement retains electrical connections");
         key('Z',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos==beforeMove&&partition(*canvas)==importedPartition,"undo restores imported symbol and wires");
         key('Y',wxMOD_CONTROL);check(canvas->GetComponents()[resistor].pos!=beforeMove,"redo moves imported resistor");
