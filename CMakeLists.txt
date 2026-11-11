@@ -7,11 +7,12 @@ include(${wxWidgets_USE_FILE})
 execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   OUTPUT_VARIABLE SE_SOURCE_REV OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
 configure_file(src/BuildVersion.h.in generated/BuildVersion.h @ONLY)
-add_library(schematic_model STATIC src/ComponentCatalog.cpp src/NetModel.cpp src/SchematicIO.cpp src/SimModel.cpp src/CircuitTools.cpp src/EditingTools.cpp src/KiCadExport.cpp src/KiCadImport.cpp src/DigitalSimulator.cpp)
+add_library(schematic_model STATIC src/ComponentCatalog.cpp src/NetModel.cpp src/SchematicIO.cpp src/SimModel.cpp src/CircuitTools.cpp src/EditingTools.cpp src/KiCadExport.cpp src/KiCadImport.cpp src/NetlistImport.cpp src/DigitalSimulator.cpp)
 target_include_directories(schematic_model PUBLIC src "${CMAKE_BINARY_DIR}/generated")
 target_link_libraries(schematic_model PUBLIC ${wxWidgets_LIBRARIES})
 add_library(schematic_ui STATIC src/MainFrame.cpp src/SchematicCanvas.cpp src/LibraryPanel.cpp
-  src/PropertyPanel.cpp src/ComponentEditorDialog.cpp src/SymbolPainter.cpp src/TextReportDialog.cpp)
+  src/PropertyPanel.cpp src/ComponentEditorDialog.cpp src/SymbolPainter.cpp src/TextReportDialog.cpp
+  src/WaveformWindow.cpp)
 target_link_libraries(schematic_ui PUBLIC schematic_model)
 if(WIN32)
   add_executable(SchematicEditor WIN32 src/minimal.cpp res/SchematicEditor.rc)
