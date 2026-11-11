@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schematic version="1.0" format="circuit-schematic">
+  <view gridStep="10" gridVisible="1" snapEnabled="1" zoom="1"/>
+  <components>
+    <component id="1" name="输入引脚" refdes="IN1" value="0" footprint="HDR-1X1" x="-220" y="-10" w="40" h="40"><pin name="OUT" dir="output" side="right" slot="0" count="1" number="1"/></component>
+    <component id="2" name="输入引脚" refdes="IN2" value="0" footprint="HDR-1X1" x="-220" y="30" w="40" h="40"><pin name="OUT" dir="output" side="right" slot="0" count="1" number="1"/></component>
+    <component id="3" name="输入引脚" refdes="IN3" value="0" footprint="HDR-1X1" x="-220" y="70" w="40" h="40"><pin name="OUT" dir="output" side="right" slot="0" count="1" number="1"/></component>
+    <component id="4" name="全加器" refdes="U1" value="FA" footprint="DIP-16" x="0" y="0" w="68" h="52"><pin name="A" dir="input" side="left" slot="0" count="3" number="1"/><pin name="B" dir="input" side="left" slot="1" count="3" number="2"/><pin name="Cin" dir="input" side="left" slot="2" count="3" number="3"/><pin name="S" dir="output" side="right" slot="0" count="2" number="4"/><pin name="C" dir="output" side="right" slot="1" count="2" number="5"/></component>
+    <component id="5" name="输出引脚" refdes="OUT1" value="OUT" footprint="HDR-1X1" x="240" y="0" w="40" h="40"><pin name="IN" dir="input" side="left" slot="0" count="1" number="1"/></component>
+    <component id="6" name="输出引脚" refdes="OUT2" value="OUT" footprint="HDR-1X1" x="240" y="40" w="40" h="40"><pin name="IN" dir="input" side="left" slot="0" count="1" number="1"/></component>
+  </components>
+  <wires>
+    <wire id="1" x1="-170" y1="10" x2="-10" y2="10"/>
+    <wire id="2" x1="-170" y1="50" x2="-140" y2="50"/>
+    <wire id="3" x1="-140" y1="50" x2="-140" y2="30"/>
+    <wire id="4" x1="-140" y1="30" x2="-10" y2="30"/>
+    <wire id="5" x1="-170" y1="90" x2="-100" y2="90"/>
+    <wire id="6" x1="-100" y1="90" x2="-100" y2="40"/>
+    <wire id="7" x1="-100" y1="40" x2="-10" y2="40"/>
+    <wire id="8" x1="78" y1="20" x2="230" y2="20"/>
+    <wire id="9" x1="78" y1="30" x2="150" y2="30"/>
+    <wire id="10" x1="150" y1="30" x2="150" y2="60"/>
+    <wire id="11" x1="150" y1="60" x2="230" y2="60"/>
+  </wires>
+</schematic>
