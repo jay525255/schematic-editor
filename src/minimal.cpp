@@ -36,7 +36,26 @@
 static void AssertLogger(const wxString& file, int line, const wxString& func,
                          const wxString& cond, const wxString& msg)
 {
-    wxFileName logFile(wxStandardPaths::Get().GetExecutablePath());
+    // 注意：不能用 wxStandardPaths —— 断言可能发生在 wxApp 创建之前
+    // （比如静态初始化里出错），那时 wxTheApp 是空的，wxStandardPaths
+    // 自己会再断言一次 "create wxApp before calling this"，把真正的
+    // 断言内容盖掉。改用 Win32 模块路径，任何时候都安全。
+    wxString exePath;
+
+    if (wxTheApp != nullptr)
+    {
+        exePath = wxStandardPaths::Get().GetExecutablePath();
+    }
+    else
+    {
+        wchar_t modulePath[MAX_PATH * 2] = { 0 };
+
+        if (::GetModuleFileNameW(nullptr, modulePath,
+                                 static_cast<DWORD>(WXSIZEOF(modulePath))) > 0)
+            exePath = wxString(modulePath);
+    }
+
+    wxFileName logFile(exePath);
     logFile.SetFullName(L"assert.log");
 
     wxFFile fileOut(logFile.GetFullPath(), L"a");

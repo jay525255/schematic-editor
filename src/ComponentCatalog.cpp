@@ -1,7 +1,8 @@
-﻿#include "ComponentCatalog.h"
+#include "ComponentCatalog.h"
 #include "DigitalSimulator.h"
 #include <wx/wfstream.h>
 
+#include <wx/app.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
 #include <wx/stdpaths.h>
@@ -44,6 +45,31 @@ void SetError(wxString* error, const wxString& message)
 {
     if (error)
         *error = message;
+}
+
+// ------------------------------------------------------------
+// 取 exe 的完整路径
+//
+// 为什么不能直接用 wxStandardPaths：它要靠 wxApp 里的应用名/厂商名
+// 才能算出各个标准目录，wxTheApp 为空时会断言
+//     "create wxApp before calling this"（stdpbase.cpp:59）
+// 而元件库是数据层，控制台程序（schematic-cli、单元测试、探针）也会用，
+// 它们根本没有 wxApp。所以这里先判断，没有 app 时退回 Win32 模块路径。
+// ------------------------------------------------------------
+wxString ExecutablePath()
+{
+    if (wxTheApp != nullptr)
+        return wxStandardPaths::Get().GetExecutablePath();
+
+#ifdef __WXMSW__
+    wchar_t modulePath[MAX_PATH * 2] = { 0 };
+
+    if (::GetModuleFileNameW(nullptr, modulePath,
+                             static_cast<DWORD>(WXSIZEOF(modulePath))) > 0)
+        return wxString(modulePath);
+#endif
+
+    return wxEmptyString;
 }
 
 // 在分类表里按名称定位元件
@@ -325,7 +351,7 @@ wxString ComponentCatalog::GetLibraryPath()
     if (!g_libraryPath.IsEmpty())
         return g_libraryPath;
 
-    wxFileName exe(wxStandardPaths::Get().GetExecutablePath());
+    wxFileName exe(ExecutablePath());
     exe.SetFullName(L"components.xml");
 
     return exe.GetFullPath();
@@ -341,7 +367,7 @@ void ComponentCatalog::SetLibraryPath(const wxString& path)
 
 bool ComponentCatalog::IsDefaultLibraryPath()
 {
-    wxFileName exe(wxStandardPaths::Get().GetExecutablePath());
+    wxFileName exe(ExecutablePath());
     exe.SetFullName(L"components.xml");
 
     return GetLibraryPath() == exe.GetFullPath();
