@@ -2,6 +2,7 @@
 #include <clocale>
 int main(int argc,char** argv){try{
     std::setlocale(LC_ALL, "");require(argc==3,"test arguments supplied");initModelTests(argv[2]);
+    auto inPin=[](int id){auto c=component(L"输入引脚",id);c.value="0";return c;};
     for(const auto& name:{L"与门",L"或门",L"非门",L"与非门",L"或非门",L"异或门",L"同或门",L"半加器",L"全加器"}){
         auto gate=component(name,10);int inputs=0,outputs=0;
         for(const auto& p:gate.pins){inputs+=p.dir==se::PinDir::Input;outputs+=p.dir==se::PinDir::Output;}
@@ -24,7 +25,7 @@ int main(int argc,char** argv){try{
     }
     require(se::LogicValueText(-1)=="X"&&se::LogicValueText(0)=="0"&&se::LogicValueText(1)=="1"&&se::LogicValueText(2)=="ERR","portable logic-state display includes explicit conflicts");
     // Independent timed chain: input -> inverter (2 ticks) -> inverter (3 ticks).
-    auto source=component(L"输入引脚",11);source.value="0";
+    auto source=inPin(11);source.value="0";
     auto first=component(L"非门",22),second=component(L"非门",33);
     first.delayTicks=2;second.delayTicks=3;
     std::vector<se::ComponentInstance> chain{source,first,second};
@@ -77,5 +78,83 @@ int main(int argc,char** argv){try{
     facade.AdvanceRuntime();auto t=facade.RuntimeTime();facade.SetRunning(false);
     require(facade.RuntimeTime()==t&&facade.RuntimeReady(),"pause preserves timeline state");
     facade.Reset(0);require(!facade.RuntimeReady(),"topology reset invalidates all queued events");
+    // ---- sequential elements: flip-flops, counter, ROM, RAM ----
+    {
+        auto inD=inPin(1),inClk=inPin(2),dff=component(L"D 触发器",3);
+        std::vector<se::ComponentInstance> cs{inD,inClk,dff};
+        se::NetGraph g;g.nets.resize(4);g.pinNet={{0},{1},{0,1,2,3}};
+        se::DigitalSimulator s;wxString err;
+        if(!s.Reset(cs,g,err)){std::cout<<"RESET-ERROR "<<err<<std::endl;}
+        require(s.Reset(cs,g,err),"D flip-flop initializes");
+        require(s.Value(2)==0&&s.Value(3)==1,"D flip-flop powers up cleared");
+        s.SetInput(1,1);s.Advance(2);
+        require(s.Value(2)==0,"D flip-flop ignores D without a clock edge");
+        s.SetInput(2,1);s.Advance(2);
+        require(s.Value(2)==1&&s.Value(3)==0,"D flip-flop samples D=1 on the rising edge");
+        s.SetInput(2,0);s.Advance(2);
+        require(s.Value(2)==1,"D flip-flop holds through the falling edge");
+        s.SetInput(1,0);s.Advance(1);s.SetInput(2,1);s.Advance(2);
+        require(s.Value(2)==0&&s.Value(3)==1,"D flip-flop samples D=0 on the next edge");
+    }
+    {
+        auto inJ=inPin(1),inK=inPin(2),inC=inPin(3),jk=component(L"JK 触发器",4);
+        std::vector<se::ComponentInstance> cs{inJ,inK,inC,jk};
+        se::NetGraph g;g.nets.resize(5);g.pinNet={{0},{1},{2},{0,1,2,3,4}};
+        se::DigitalSimulator s;wxString err;
+        require(s.Reset(cs,g,err),"JK flip-flop initializes");
+        s.SetInput(1,1);s.Advance(1);s.SetInput(3,1);s.Advance(2);
+        require(s.Value(3)==1&&s.Value(4)==0,"JK flip-flop sets on a rising edge");
+        s.SetInput(3,0);s.Advance(1);s.SetInput(1,0);s.SetInput(2,1);s.Advance(1);s.SetInput(3,1);s.Advance(2);
+        require(s.Value(3)==0&&s.Value(4)==1,"JK flip-flop resets on a rising edge");
+        s.SetInput(3,0);s.Advance(1);s.SetInput(2,0);s.Advance(1);s.SetInput(3,1);s.Advance(2);
+        require(s.Value(3)==0,"JK flip-flop holds when both inputs are low");
+        s.SetInput(3,0);s.Advance(1);s.SetInput(1,1);s.SetInput(2,1);s.Advance(1);s.SetInput(3,1);s.Advance(2);
+        require(s.Value(3)==1,"JK flip-flop toggles when both inputs are high");
+    }
+    {
+        auto inC=inPin(1),inR=inPin(2),cnt=component(L"4 位计数器",3);
+        std::vector<se::ComponentInstance> cs{inC,inR,cnt};
+        se::NetGraph g;g.nets.resize(6);g.pinNet={{0},{1},{0,1,2,3,4,5}};
+        se::DigitalSimulator s;wxString err;
+        require(s.Reset(cs,g,err),"4-bit counter initializes");
+        require(s.Value(2)==0&&s.Value(3)==0&&s.Value(4)==0&&s.Value(5)==0,"4-bit counter starts at zero");
+        for(int i=0;i<3;++i){s.SetInput(1,1);s.Advance(1);s.SetInput(1,0);s.Advance(1);}
+        require(s.Value(2)==1&&s.Value(3)==1&&s.Value(4)==0&&s.Value(5)==0,"three clock pulses count to binary 0011");
+        s.SetInput(2,1);s.Advance(1);
+        require(s.Value(2)==0&&s.Value(3)==0&&s.Value(4)==0,"asynchronous reset clears the counter");
+    }
+    {
+        auto a0=inPin(1),a1=inPin(2),a2=inPin(3),a3=inPin(4),rom=component(L"ROM 16×4",5);
+        std::vector<se::ComponentInstance> cs{a0,a1,a2,a3,rom};
+        se::NetGraph g;g.nets.resize(8);g.pinNet={{0},{1},{2},{3},{0,1,2,3,4,5,6,7}};
+        se::DigitalSimulator s;wxString err;
+        require(s.Reset(cs,g,err),"ROM initializes with its factory image");s.Advance(2);
+        require(s.Value(4)==0&&s.Value(5)==0&&s.Value(6)==0&&s.Value(7)==0,"ROM address 0 reads 0000");
+        s.SetInput(1,1);s.SetInput(2,1);s.Advance(2);
+        require(s.Value(4)==1&&s.Value(5)==1&&s.Value(6)==0&&s.Value(7)==0,"ROM address 3 reads 0011");
+        s.SetInput(1,0);s.SetInput(2,0);s.SetInput(3,1);s.Advance(2);
+        require(s.Value(4)==0&&s.Value(5)==0&&s.Value(6)==1&&s.Value(7)==0,"ROM address 4 reads 0100");
+        s.SetInput(1,1);s.SetInput(4,1);s.Advance(2);
+        require(s.Value(4)==1&&s.Value(5)==0&&s.Value(6)==1&&s.Value(7)==1,"ROM address 13 reads 1101");
+    }
+    {
+        auto a0=inPin(1),a1=inPin(2),a2=inPin(3),a3=inPin(4);
+        auto we=inPin(5),d0=inPin(6),d1=inPin(7),d2=inPin(8),d3=inPin(9);
+        auto ram=component(L"RAM 16×4",10);
+        std::vector<se::ComponentInstance> cs{a0,a1,a2,a3,we,d0,d1,d2,d3,ram};
+        se::NetGraph g;g.nets.resize(13);g.pinNet={{0},{1},{2},{3},{4},{5},{6},{7},{8},{0,1,2,3,4,5,6,7,8,9,10,11,12}};
+        se::DigitalSimulator s;wxString err;
+        require(s.Reset(cs,g,err),"RAM initializes empty");s.Advance(2);
+        require(s.Value(9)==0&&s.Value(10)==0&&s.Value(11)==0&&s.Value(12)==0,"RAM address 0 holds its factory value 0000");
+        s.SetInput(2,1);s.Advance(2);
+        require(s.Value(9)==0&&s.Value(10)==1&&s.Value(11)==0&&s.Value(12)==0,"RAM address 2 still holds its factory value 0010");
+        s.SetInput(6,1);s.SetInput(8,1);s.SetInput(5,1);s.Advance(2);
+        require(s.Value(9)==1&&s.Value(10)==0&&s.Value(11)==1&&s.Value(12)==0,"RAM keeps 0101 at the written address");
+        s.SetInput(1,1);s.SetInput(5,0);s.Advance(2);
+        require(s.Value(9)==1&&s.Value(10)==1&&s.Value(11)==0&&s.Value(12)==0,"RAM write only touches the selected address");
+        s.SetInput(1,0);s.Advance(2);
+        require(s.Value(9)==1&&s.Value(11)==1,"RAM keeps the stored word per address");
+    }
     std::cout<<"Executed steady-state truth tables and timed event propagation scenarios.\n";return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;}}
+

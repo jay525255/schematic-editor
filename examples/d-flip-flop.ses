@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schematic version="1.0" format="circuit-schematic">
+  <view gridStep="10" gridVisible="1" snapEnabled="1" zoom="1"/>
+  <components>
+    <component id="1" name="D 触发器" refdes="U1" value="DFF" footprint="DIP-14" x="0" y="0" w="70" h="60"><pin name="D" dir="input" side="left" slot="0" count="2" number="1"/><pin name="CLK" dir="input" side="left" slot="1" count="2" number="2"/><pin name="Q" dir="output" side="right" slot="0" count="2" number="3"/><pin name="QN" dir="output" side="right" slot="1" count="2" number="4"/></component>
+    <component id="2" name="输入引脚" refdes="IN_D" value="0" footprint="HDR-1X1" x="-300" y="0" w="40" h="40"><pin name="OUT" dir="output" side="right" slot="0" count="1" number="1"/></component>
+    <component id="3" name="输入引脚" refdes="IN_CLK" value="0" footprint="HDR-1X1" x="-420" y="20" w="40" h="40"><pin name="OUT" dir="output" side="right" slot="0" count="1" number="1"/></component>
+    <component id="4" name="输出引脚" refdes="OUT_Q" value="OUT" footprint="HDR-1X1" x="370" y="0" w="40" h="40"><pin name="IN" dir="input" side="left" slot="0" count="1" number="1"/></component>
+    <component id="5" name="输出引脚" refdes="OUT_QN" value="OUT" footprint="HDR-1X1" x="490" y="20" w="40" h="40"><pin name="IN" dir="input" side="left" slot="0" count="1" number="1"/></component>
+  </components>
+  <wires>
+    <wire id="1" x1="-250" y1="20" x2="-10" y2="20"/>
+    <wire id="2" x1="-370" y1="40" x2="-10" y2="40"/>
+    <wire id="3" x1="80" y1="20" x2="360" y2="20"/>
+    <wire id="4" x1="80" y1="40" x2="480" y2="40"/>
+  </wires>
+</schematic>
