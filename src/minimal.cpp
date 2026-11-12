@@ -46,6 +46,7 @@ static void AssertLogger(const wxString& file, int line, const wxString& func,
     {
         exePath = wxStandardPaths::Get().GetExecutablePath();
     }
+#ifdef __WXMSW__
     else
     {
         wchar_t modulePath[MAX_PATH * 2] = { 0 };
@@ -54,6 +55,13 @@ static void AssertLogger(const wxString& file, int line, const wxString& func,
                                  static_cast<DWORD>(WXSIZEOF(modulePath))) > 0)
             exePath = wxString(modulePath);
     }
+#else
+    else
+    {
+        // 非 Windows：没有 wxApp 时没法问"程序在哪"，退到临时目录
+        exePath = wxFileName::GetTempDir();
+    }
+#endif
 
     wxFileName logFile(exePath);
     logFile.SetFullName(L"assert.log");
