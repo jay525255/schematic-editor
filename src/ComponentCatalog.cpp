@@ -100,10 +100,10 @@ std::vector<CategoryDef> MakeLibraryTemplate()
     mine.name = L"用户自定义";
 
     mine.items.push_back({ L"三输入与门", L"U", L"Y = A · B · C（示例：自定义元件）",
-                           3, 1, ComponentKind::Logic, 70, 46, L"DIP-14", L"AND3" });
+                           3, 1, ComponentKind::Logic, 70, 46, L"Package_DIP:DIP-14_W7.62mm", L"AND3" });
 
     mine.items.push_back({ L"四输入或门", L"U", L"Y = A + B + C + D（示例：自定义元件）",
-                           4, 1, ComponentKind::Logic, 74, 54, L"DIP-14", L"OR4" });
+                           4, 1, ComponentKind::Logic, 74, 54, L"Package_DIP:DIP-14_W7.62mm", L"OR4" });
 
     cats.push_back(mine);
 
@@ -217,15 +217,15 @@ const std::vector<CategoryDef>& BuiltinData()
         {
             L"数字逻辑",
             {
-                { L"与门",   L"U", L"两输入与门，Y = A · B",        2, 1, ComponentKind::Logic, 60, 40, L"DIP-14", L"AND2" },
-                { L"或门",   L"U", L"两输入或门，Y = A + B",        2, 1, ComponentKind::Logic, 60, 40, L"DIP-14", L"OR2" },
-                { L"非门",   L"U", L"反相器，Y = /A",               1, 1, ComponentKind::Logic, 55, 40, L"DIP-14", L"NOT" },
-                { L"与非门", L"U", L"两输入与非门，Y = /(A · B)",   2, 1, ComponentKind::Logic, 60, 40, L"DIP-14", L"NAND2" },
-                { L"或非门", L"U", L"两输入或非门，Y = /(A + B)",   2, 1, ComponentKind::Logic, 60, 40, L"DIP-14", L"NOR2" },
-                { L"异或门", L"U", L"两输入异或门，Y = A ⊕ B",      2, 1, ComponentKind::Logic, 60, 40, L"DIP-14", L"XOR2" },
-                { L"同或门", L"U", L"两输入同或门，Y = /(A ⊕ B)",   2, 1, ComponentKind::Logic, 60, 40, L"DIP-14", L"XNOR2" },
-                { L"半加器", L"U", L"半加器：A/B 输入，S 和、C 进位", 2, 2, ComponentKind::Logic, 64, 46, L"DIP-14", L"HA" },
-                { L"全加器", L"U", L"全加器：A/B/Cin，S 和、C 进位", 3, 2, ComponentKind::Logic, 68, 52, L"DIP-16", L"FA" },
+                { L"与门",   L"U", L"两输入与门，Y = A · B",        2, 1, ComponentKind::Logic, 60, 40, L"Package_DIP:DIP-14_W7.62mm", L"AND2" },
+                { L"或门",   L"U", L"两输入或门，Y = A + B",        2, 1, ComponentKind::Logic, 60, 40, L"Package_DIP:DIP-14_W7.62mm", L"OR2" },
+                { L"非门",   L"U", L"反相器，Y = /A",               1, 1, ComponentKind::Logic, 55, 40, L"Package_DIP:DIP-14_W7.62mm", L"NOT" },
+                { L"与非门", L"U", L"两输入与非门，Y = /(A · B)",   2, 1, ComponentKind::Logic, 60, 40, L"Package_DIP:DIP-14_W7.62mm", L"NAND2" },
+                { L"或非门", L"U", L"两输入或非门，Y = /(A + B)",   2, 1, ComponentKind::Logic, 60, 40, L"Package_DIP:DIP-14_W7.62mm", L"NOR2" },
+                { L"异或门", L"U", L"两输入异或门，Y = A ⊕ B",      2, 1, ComponentKind::Logic, 60, 40, L"Package_DIP:DIP-14_W7.62mm", L"XOR2" },
+                { L"同或门", L"U", L"两输入同或门，Y = /(A ⊕ B)",   2, 1, ComponentKind::Logic, 60, 40, L"Package_DIP:DIP-14_W7.62mm", L"XNOR2" },
+                { L"半加器", L"U", L"半加器：A/B 输入，S 和、C 进位", 2, 2, ComponentKind::Logic, 64, 46, L"Package_DIP:DIP-14_W7.62mm", L"HA" },
+                { L"全加器", L"U", L"全加器：A/B/Cin，S 和、C 进位", 3, 2, ComponentKind::Logic, 68, 52, L"Package_DIP:DIP-16_W7.62mm", L"FA" },
             }
         },
         {
@@ -234,44 +234,44 @@ const std::vector<CategoryDef>& BuiltinData()
                 // 这一组的元件"有记忆"：输出不只取决于当前输入，
                 // 还取决于时钟上一个上升沿时存进来的值。
                 // logicModel 显式写出来，这样元件改名了也不会丢失行为。
-                { L"D 触发器",   L"U", L"D 触发器：CLK 上升沿采样 D，输出 Q / QN", 2, 2, ComponentKind::Logic,  70,  60, L"DIP-14", L"DFF",     false, L"dff" },
-                { L"JK 触发器",  L"U", L"JK 触发器：J 置位、K 复位、J=K=1 翻转",   3, 2, ComponentKind::Logic,  80,  60, L"DIP-14", L"JKFF",    false, L"jkff" },
-                { L"4 位计数器", L"U", L"4 位二进制计数器：CLK 上升沿加 1，RST 清零", 2, 4, ComponentKind::Logic,  90, 100, L"DIP-16", L"CNT4",    false, L"counter" },
-                { L"ROM 16×4",   L"U", L"16×4 只读存储器：A0~A3 选址，D0~D3 输出", 4, 4, ComponentKind::Logic,  90, 100, L"DIP-16", L"ROM16X4", false, L"rom" },
-                { L"RAM 16×4",   L"U", L"16×4 读写存储器：WE 上升沿写入，读为异步", 9, 4, ComponentKind::Logic, 110, 200, L"DIP-24", L"RAM16X4", false, L"ram" },
+                { L"D 触发器",   L"U", L"D 触发器：CLK 上升沿采样 D，输出 Q / QN", 2, 2, ComponentKind::Logic,  70,  60, L"Package_DIP:DIP-14_W7.62mm", L"DFF",     false, L"dff" },
+                { L"JK 触发器",  L"U", L"JK 触发器：J 置位、K 复位、J=K=1 翻转",   3, 2, ComponentKind::Logic,  80,  60, L"Package_DIP:DIP-14_W7.62mm", L"JKFF",    false, L"jkff" },
+                { L"4 位计数器", L"U", L"4 位二进制计数器：CLK 上升沿加 1，RST 清零", 2, 4, ComponentKind::Logic,  90, 100, L"Package_DIP:DIP-16_W7.62mm", L"CNT4",    false, L"counter" },
+                { L"ROM 16×4",   L"U", L"16×4 只读存储器：A0~A3 选址，D0~D3 输出", 4, 4, ComponentKind::Logic,  90, 100, L"Package_DIP:DIP-16_W7.62mm", L"ROM16X4", false, L"rom" },
+                { L"RAM 16×4",   L"U", L"16×4 读写存储器：WE 上升沿写入，读为异步", 9, 4, ComponentKind::Logic, 110, 200, L"Package_DIP:DIP-24_W15.24mm", L"RAM16X4", false, L"ram" },
             }
         },
         {
             L"输入输出",
             {
-                { L"输入引脚", L"IN",  L"电路输入端口",          0, 1, ComponentKind::Port, 46, 34, L"HDR-1X1", L"IN" },
-                { L"输出引脚", L"OUT", L"电路输出端口",          1, 0, ComponentKind::Port, 46, 34, L"HDR-1X1", L"OUT" },
-                { L"时钟",     L"CLK", L"时钟信号源",            0, 1, ComponentKind::Port, 46, 34, L"HDR-1X1", L"CLK" },
-                { L"常量",     L"V",   L"逻辑常量 0 / 1",        0, 1, ComponentKind::Port, 46, 34, L"HDR-1X1", L"CONST" },
-                { L"探针",     L"P",   L"观察某条网络的逻辑值",  1, 1, ComponentKind::Port, 46, 34, L"TP-1X1",  L"PROBE" },
+                { L"输入引脚", L"IN",  L"电路输入端口",          0, 1, ComponentKind::Port, 46, 34, L"Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical", L"IN" },
+                { L"输出引脚", L"OUT", L"电路输出端口",          1, 0, ComponentKind::Port, 46, 34, L"Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical", L"OUT" },
+                { L"时钟",     L"CLK", L"时钟信号源",            0, 1, ComponentKind::Port, 46, 34, L"Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical", L"CLK" },
+                { L"常量",     L"V",   L"逻辑常量 0 / 1",        0, 1, ComponentKind::Port, 46, 34, L"Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical", L"CONST" },
+                { L"探针",     L"P",   L"观察某条网络的逻辑值",  1, 1, ComponentKind::Port, 46, 34, L"TestPoint:TestPoint_Pad_D1.5mm",  L"PROBE" },
             }
         },
         {
             L"无源器件",
             {
-                { L"电阻", L"R", L"理想电阻（两端器件）", 1, 1, ComponentKind::Passive, 34, 60, L"0805", L"10k" },
-                { L"电容", L"C", L"理想电容（两端器件）", 1, 1, ComponentKind::Passive, 34, 60, L"0603", L"100nF" },
-                { L"电感", L"L", L"理想电感（两端器件）", 1, 1, ComponentKind::Passive, 34, 60, L"0805", L"10uH" },
+                { L"电阻", L"R", L"理想电阻（两端器件）", 1, 1, ComponentKind::Passive, 34, 60, L"Resistor_SMD:R_0805_2012Metric", L"10k" },
+                { L"电容", L"C", L"理想电容（两端器件）", 1, 1, ComponentKind::Passive, 34, 60, L"Capacitor_SMD:C_0603_1608Metric", L"100nF" },
+                { L"电感", L"L", L"理想电感（两端器件）", 1, 1, ComponentKind::Passive, 34, 60, L"Inductor_SMD:L_0805_2012Metric", L"10uH" },
             }
         },
         {
             L"半导体器件",
             {
-                { L"二极管",     L"D", L"PN 结二极管", 1, 1, ComponentKind::Passive, 34, 60, L"SOD-123", L"1N4148" },
-                { L"LED",        L"D", L"发光二极管",  1, 1, ComponentKind::Passive, 34, 60, L"0805",    L"LED-Red" },
-                { L"NPN 晶体管", L"Q", L"NPN 三极管：B 输入，C/E 输出", 1, 2, ComponentKind::Logic, 60, 50, L"TO-92", L"2N3904" },
-                { L"PNP 晶体管", L"Q", L"PNP 三极管：B 输入，C/E 输出", 1, 2, ComponentKind::Logic, 60, 50, L"TO-92", L"2N3906" },
+                { L"二极管",     L"D", L"PN 结二极管", 1, 1, ComponentKind::Passive, 34, 60, L"Diode_SMD:D_SOD-123", L"1N4148" },
+                { L"LED",        L"D", L"发光二极管",  1, 1, ComponentKind::Passive, 34, 60, L"LED_SMD:LED_0805_2012Metric",    L"LED-Red" },
+                { L"NPN 晶体管", L"Q", L"NPN 三极管：B 输入，C/E 输出", 1, 2, ComponentKind::Logic, 60, 50, L"Package_TO_SOT_THT:TO-92_Inline", L"2N3904" },
+                { L"PNP 晶体管", L"Q", L"PNP 三极管：B 输入，C/E 输出", 1, 2, ComponentKind::Logic, 60, 50, L"Package_TO_SOT_THT:TO-92_Inline", L"2N3906" },
             }
         },
         {
             L"模拟器件",
             {
-                { L"运算放大器", L"U", L"理想运放：两输入一输出", 2, 1, ComponentKind::Logic, 62, 46, L"SOIC-8", L"LM358" },
+                { L"运算放大器", L"U", L"理想运放：两输入一输出", 2, 1, ComponentKind::Logic, 62, 46, L"Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", L"LM358" },
             }
         },
         {
