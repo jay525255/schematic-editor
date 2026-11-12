@@ -398,6 +398,7 @@ private:
 
     std::vector<ComponentInstance> m_dragBaseComponents;
     std::vector<Wire> m_dragBaseWires;
+    std::vector<TextItem> m_dragBaseTexts;
 
     bool                 m_dragging   = false;
     bool                 m_dragMoved  = false;

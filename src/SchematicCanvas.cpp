@@ -1612,6 +1612,13 @@ void SchematicCanvas::OnLeftDown(wxMouseEvent& event)
         UpdateHoverNet(point);
         NotifySelectionChanged();
         Refresh();
+
+        // 按住已选中的文本 → 也准备拖动。
+        // 原先这里只做选中就 return，于是文本永远拖不动：
+        // BeginDrag 又要求"必须有元件被选中"，所以纯文本选择时连拖动都进不来。
+        if (!add && IsTextSelected(textIndex))
+            BeginDrag(point);
+
         return;
     }
 
@@ -2090,13 +2097,15 @@ void SchematicCanvas::PlaceComponent(const wxPoint& world)
 // ------------------------------------------------------------
 void SchematicCanvas::BeginDrag(const wxPoint& world)
 {
-    if (m_selComponents.empty()) return;
+    // 元件和文本都能拖；只有导线被选中时没有"拖动"这件事（导线要靠改端点）。
+    if (m_selComponents.empty() && m_selTexts.empty()) return;
     StopSimulation();
     m_dragging = true;
     m_dragMoved = false;
     m_dragStartWorld = world;
     m_dragBaseComponents = m_components;
     m_dragBaseWires = m_wires;
+    m_dragBaseTexts = m_texts;
     SetCursor(wxCursor(wxCURSOR_SIZING));
 }
 
@@ -2130,18 +2139,57 @@ void SchematicCanvas::UpdateDrag(const wxPoint& world)
             delta = SnapToGrid(base + delta) - base;   // 让被抓住的元件左上角落到网格上
         }
     }
+    else if (m_snapEnabled && !m_selTexts.empty() && !m_dragBaseTexts.empty())
+    {
+        // 只拖文本时同理：以被抓住的那条文本为锚点，让它落到网格上。
+        int anchor = m_selTexts.front();
+        for (int index : m_selTexts)
+        {
+            if (index < 0 || index >= static_cast<int>(m_dragBaseTexts.size())) continue;
+            if (BoxOfText(m_dragBaseTexts[index]).Inflate(4, 4).Contains(m_dragStartWorld))
+            {
+                anchor = index;
+                break;
+            }
+        }
+
+        if (anchor >= 0 && anchor < static_cast<int>(m_dragBaseTexts.size()))
+        {
+            const wxPoint base = m_dragBaseTexts[anchor].pos;
+            delta = SnapToGrid(base + delta) - base;
+        }
+    }
 
     if (delta == wxPoint(0, 0) && !m_dragMoved) return;
-    if (!m_dragMoved) { PushUndo(L"移动元件及连接线"); m_dragMoved = true; }
+    if (!m_dragMoved)
+    {
+        PushUndo(m_selComponents.empty()             ? wxString(L"移动文本")
+                 : m_selTexts.empty()                ? wxString(L"移动元件及连接线")
+                                                     : wxString(L"移动选中对象"));
+        m_dragMoved = true;
+    }
     m_components = m_dragBaseComponents;
     m_wires = m_dragBaseWires;
-    if (!MoveConnectedComponents(m_components, m_wires, m_selComponents, delta) && OnStatusMessage)
-        OnStatusMessage(L"移动已取消：当前位置会改变网络连接，请换一个位置");
-    for (const auto& wire : m_wires) m_nextWireId = std::max(m_nextWireId, wire.id);
-    m_selWires.clear();
-    m_netsDirty = true;
+    m_texts = m_dragBaseTexts;
+
+    if (!m_selComponents.empty())
+    {
+        if (!MoveConnectedComponents(m_components, m_wires, m_selComponents, delta) && OnStatusMessage)
+            OnStatusMessage(L"移动已取消：当前位置会改变网络连接，请换一个位置");
+        for (const auto& wire : m_wires) m_nextWireId = std::max(m_nextWireId, wire.id);
+        m_selWires.clear();
+        m_netsDirty = true;
+        GetNetGraph();
+    }
+
+    // 文本与元件各自按同一个 delta 平移：框选一块拖走时相对位置不会被拆散。
+    for (int index : m_selTexts)
+    {
+        if (index < 0 || index >= static_cast<int>(m_texts.size())) continue;
+        m_texts[index].pos = m_dragBaseTexts[index].pos + delta;
+    }
+
     m_cursorWorld = world;
-    GetNetGraph();
     if (OnCursorMoved) OnCursorMoved(world);
     Refresh();
 }
@@ -2151,10 +2199,45 @@ void SchematicCanvas::EndDrag()
     if (!m_dragging) return;
     m_dragging = false;
     SetCursor(wxCursor(wxCURSOR_CROSS));
+
+    // 拖动过程中每个鼠标移动事件都会重算几何，历史画卷里可能本来就带着
+    // 共线残段/重复段。收尾时统一化简一次，并核对引脚归属没有变化：
+    // 化简只合并同一根直线上的覆盖范围，正常不会改连通性，一旦改了则整批回退。
+    if (m_dragMoved && !m_selComponents.empty() && !m_wires.empty())
+    {
+        const std::vector<Wire> beforeWires = m_wires;
+        const NetGraph beforeGraph = NetBuilder::Build(m_components, m_wires);
+
+        // 只对本次拖动真正改写过的导线做残骸清理：被拖引脚离开后留下的
+        // 悬空短枝/伸出交叉点之外的残段，在这里回收。用户没被拖到的线一根都不动。
+        // 只清理本次拖动真正改写的那张网络：种子是被拖动引脚的新旧落点。
+        // 按几何对比找“改了哪几根线”不可靠——重路由经常把一根线原样还原，
+        // 几何一字未变，可它旁边的支线已经被收短了。
+        std::vector<wxPoint> seeds;
+        for (size_t ci = 0; ci < m_components.size() && ci < m_dragBaseComponents.size(); ++ci)
+        {
+            for (size_t k = 0; k < m_components[ci].pins.size(); ++k)
+            {
+                const wxPoint before = PinPosition(m_dragBaseComponents[ci], static_cast<int>(k));
+                const wxPoint now    = PinPosition(m_components[ci], static_cast<int>(k));
+                if (before == now) continue;
+                seeds.push_back(before);
+                seeds.push_back(now);
+            }
+        }
+        CleanDanglingWireEnds(m_wires, m_components, seeds);
+        NormalizeWireGeometry(m_wires);
+        if (!SameTerminalPartition(beforeGraph, NetBuilder::Build(m_components, m_wires)))
+            m_wires = beforeWires;
+        else
+            m_netsDirty = true;
+    }
+
     if (m_dragMoved) { Touch(); NotifySelectionChanged(); }
     m_dragMoved = false;
     m_dragBaseComponents.clear();
     m_dragBaseWires.clear();
+    m_dragBaseTexts.clear();
     Refresh();
 }
 

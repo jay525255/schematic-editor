@@ -100,6 +100,15 @@ int main(int argc,char**argv){
         click(canvas,canvas->ScreenPoint(original+wxPoint(30,20)));
         key('H',wxMOD_CONTROL);check(canvas->GetComponents()[0].xform!=oldTransform&&connected(),"native flip preserves attached wire network");key('Z',wxMOD_CONTROL);
         check(screenshot("editing.png"),"save actual editing screenshot");
+        // 文本注记也要能拖：它没有引脚、不参与连通性，最容易在拖动分支里被漏掉。
+        canvas->PlaceText(wxString::FromUTF8("NOTE"),wxPoint(-200,60));
+        const wxPoint noteBefore=canvas->GetTexts().back().pos;
+        const wxPoint noteGrab=canvas->ScreenPoint(noteBefore+wxPoint(12,10));
+        check(input->MouseMove(canvas->ClientToScreen(noteGrab))&&input->MouseDown(),"text drag begins");pump();
+        check(input->MouseMove(canvas->ClientToScreen(noteGrab+wxPoint(20,20))),"text drag moves");pump();
+        check(input->MouseUp(),"text drag ends");pump();
+        check(canvas->GetTexts().back().pos!=noteBefore,"dragging a text note moves it");
+        key('Z',wxMOD_CONTROL);check(canvas->GetTexts().back().pos==noteBefore,"undo restores the text note position");
         key('A',wxMOD_CONTROL);key('C',wxMOD_CONTROL);key('V',wxMOD_CONTROL);check(canvas->GetComponentCount()==4,"native copy paste adds independent instances");key('Z',wxMOD_CONTROL);
         auto saved=wxFileName(out,"native-roundtrip.ses").GetFullPath();fileCommand(wxMOD_CONTROL|wxMOD_SHIFT,'S',saved);
         check(wxFileExists(saved)&&!canvas->IsModified(),"native save-as writes design");key('N',wxMOD_CONTROL);check(canvas->GetComponentCount()==0,"native new clears saved design");
